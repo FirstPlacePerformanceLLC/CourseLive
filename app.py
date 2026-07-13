@@ -53,7 +53,7 @@ SPOTS = [
     {"key": "jeopardy", "day": 3, "title": "Jeopardy", "anchor": "3A Gain Willing Cooperation review", "live": False},
     {"key": "taketheturn", "day": 3, "title": "Take the Turn", "anchor": "3B Disagree Agreeably, the Cushion", "live": False},
     {"key": "disc", "day": 3, "title": "Your DISC Lean", "anchor": "3C Develop More Flexibility, How People View Us", "live": True},
-    {"key": "recognition", "day": 3, "title": "Recognition Wall", "anchor": "3D Build Others Through Recognition", "live": False},
+    {"key": "recognition", "day": 3, "title": "Recognition Wall", "anchor": "3D Build Others Through Recognition", "live": True},
 ]
 
 SPOT_BY_KEY = {s["key"]: s for s in SPOTS}
@@ -444,6 +444,8 @@ PAGE = """<!DOCTYPE html>
   .stem { font-size: 17px; font-weight: 500; line-height: 1.5; margin: 0 0 16px; }
   .opt { border: 1px solid #d7dde3; border-radius: 12px; padding: 14px 15px; font-size: 15px; margin-bottom: 10px; cursor: pointer; line-height: 1.45; }
   .opt:active { background: #f4f6f8; }
+  .peeropt { transition: border-color 0.15s, background 0.15s; }
+  textarea.note { width: 100%; border: 1px solid #d7dde3; border-radius: 12px; padding: 12px 14px; font-size: 15px; font-family: inherit; min-height: 84px; margin: 4px 0 12px; resize: vertical; }
   .name-btn { display: flex; justify-content: space-between; align-items: center; border: 1px solid #d7dde3; border-radius: 12px; padding: 14px 15px; margin-bottom: 10px; cursor: pointer; }
   .name-btn .nm { font-size: 16px; font-weight: 500; }
   .name-btn .co { font-size: 12px; color: #5f6b76; }
@@ -486,7 +488,9 @@ var IS_PREVIEW = __PREVIEW__;
 
 var joined = IS_PREVIEW;
 var renderedKey = null;
+var lastRecStatus = null;
 var qi = 0;
+var recPeer = null;
 
 function esc(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 function el(id){ return document.getElementById(id); }
@@ -541,17 +545,24 @@ function confirmPick(id){
 function tick(){
   if (!joined){ return; }
   fetch("/state").then(function(r){ return r.json(); }).then(function(st){
-    if (st.active !== renderedKey){
+    var changed = st.active !== renderedKey;
+    if (st.active === "recognition" && st.status !== lastRecStatus){ changed = true; }
+    if (st.active === "recognition"){ lastRecStatus = st.status; }
+    if (changed){
       renderedKey = st.active;
-      renderSpot(st.active);
+      renderSpot(st.active, st.status);
     }
   }).catch(function(){});
 }
 
-function renderSpot(key){
+function renderSpot(key, status){
   if (key === "welcome"){ renderJoined(); return; }
   if (key === "disc"){ startDisc(); return; }
   if (key === "rollcall"){ startRollcall(); return; }
+  if (key === "recognition"){
+    if (status === "locked"){ recWallUp(); } else { startRecognition(); }
+    return;
+  }
   renderHold(key);
 }
 
@@ -612,6 +623,64 @@ function rollcallDone(k){
     '<p class="big">' + esc(label) + '</p>' +
     '<p class="small">Great choice. We will grow this over the three days. Watch the main screen.</p>' +
     '</div>';
+}
+
+// ----- Recognition Wall -----
+function startRecognition(){
+  setTitle("Recognition Wall");
+  setBar(0);
+  el("sub").textContent = "A note for a classmate";
+  recPeer = null;
+  fetch("/spot/recognition/mine").then(function(r){ return r.json(); }).then(function(mine){
+    if (mine && mine.to){ recSent(); return; }
+    fetch("/spot/recognition/peers").then(function(r){ return r.json(); }).then(function(peers){
+      var h = '<p class="stem">Send a sincere, specific note to someone in the room. Keep it warm and brief.</p><div>';
+      peers.forEach(function(p){
+        h += '<div class="opt peeropt" data-id="' + p.id + '" onclick="selPeer(' + p.id + ')">' + esc(p.name) + '</div>';
+      });
+      h += '</div><textarea class="note" id="note" placeholder="What do you appreciate about them?"></textarea>' +
+           '<button class="btn" onclick="sendRec()">Send it</button>';
+      el("body").innerHTML = h;
+    });
+  });
+}
+
+function selPeer(id){
+  recPeer = id;
+  var opts = document.querySelectorAll(".peeropt");
+  for (var i=0;i<opts.length;i++){
+    var on = parseInt(opts[i].getAttribute("data-id"), 10) === id;
+    opts[i].style.borderColor = on ? "#0d9488" : "#d7dde3";
+    opts[i].style.background = on ? "#e1f5ee" : "#fff";
+  }
+}
+
+function sendRec(){
+  var note = (el("note").value || "").trim();
+  if (recPeer === null){ el("sub").textContent = "Pick a name first"; return; }
+  if (!note){ el("sub").textContent = "Add a short note"; return; }
+  api("/spot/recognition/submit", {to: recPeer, note: note}).then(function(res){
+    if (res.ok){ recSent(); }
+    else if (res.locked){ el("sub").textContent = "The wall is closed now"; }
+  });
+}
+
+function recSent(){
+  setBar(100);
+  el("sub").textContent = "Sent";
+  el("body").innerHTML =
+    '<div class="hold"><span class="tag">SENT</span>' +
+    '<p class="big">Your note is in.</p>' +
+    '<p class="small">We will put the wall on the screen. Watch the main display.</p></div>';
+}
+
+function recWallUp(){
+  setBar(100);
+  el("sub").textContent = "On the screen";
+  el("body").innerHTML =
+    '<div class="hold"><span class="tag">RECOGNITION WALL</span>' +
+    '<p class="big">Look up at the screen.</p>' +
+    '<p class="small">The notes the room wrote are up on the main display.</p></div>';
 }
 
 // ----- DISC -----
@@ -731,6 +800,15 @@ HOST_PAGE = """<!DOCTYPE html>
   .wcount { font-size: 13px; color: #9fe1cb; margin-top: 20px; letter-spacing: 1px; }
   .nextup { padding: 40px 22px; text-align: center; }
   .nextup .lab { font-size: 13px; font-weight: 600; letter-spacing: 1px; color: #0d6e63; }
+  .recintro { padding: 40px 22px; text-align: center; }
+  .recintro .lab { font-size: 13px; font-weight: 600; letter-spacing: 1px; color: #0d6e63; }
+  .recintro .big { font-size: 30px; font-weight: 600; margin: 10px 0 6px; }
+  .recintro .an { font-size: 14px; color: #5f6b76; }
+  .wall { padding: 18px 20px 26px; column-count: 2; column-gap: 16px; }
+  .rcard { break-inside: avoid; background: #fff; border: 1px solid #e4e9ee; border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; box-shadow: 0 1px 5px rgba(15,41,66,0.06); }
+  .rcard .rto { font-size: 12px; font-weight: 600; color: #0d6e63; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .rnote { font-size: 14px; line-height: 1.45; margin: 0 0 8px; }
+  .rnote .rfrom { display: block; font-size: 11px; color: #8a97a3; margin-top: 3px; }
   .nextup .big { font-size: 30px; font-weight: 600; margin: 10px 0 6px; }
   .nextup .an { font-size: 14px; color: #5f6b76; }
   .tools { display: flex; gap: 10px; margin-top: 14px; }
@@ -851,12 +929,42 @@ function drawWelcome(data){
   byid("wcount").textContent = n === 0 ? "Waiting for the room" : (n + " of 7 here");
 }
 
+function drawRecognition(data){
+  if (data.status !== "locked"){
+    var n = (data.recognition || []).length;
+    byid("cnt").textContent = n + " of 7 sent";
+    byid("stagebody").innerHTML =
+      '<div class="recintro"><div class="lab">RECOGNITION WALL</div>' +
+      '<div class="big">Notes are coming in</div>' +
+      '<div class="an">When the room is ready, lock input on your phone to reveal the wall.</div></div>';
+    return;
+  }
+  byid("cnt").textContent = (data.recognition || []).length + " notes";
+  var groups = {};
+  var order = [];
+  (data.recognition || []).forEach(function(r){
+    if (!groups[r.to]){ groups[r.to] = []; order.push(r.to); }
+    groups[r.to].push(r);
+  });
+  var h = '<div class="wall">';
+  order.forEach(function(name){
+    h += '<div class="rcard"><div class="rto">For ' + esc(name) + '</div>';
+    groups[name].forEach(function(r){
+      h += '<p class="rnote">' + esc(r.note) + '<span class="rfrom">from ' + esc(r["from"]) + '</span></p>';
+    });
+    h += '</div>';
+  });
+  h += '</div>';
+  byid("stagebody").innerHTML = h;
+}
+
 function draw(data){
   byid("stitle").textContent = data.title;
   if (data.active !== "welcome"){ welcomeMounted = false; }
   if (data.active === "welcome"){ drawWelcome(data); }
   else if (data.active === "disc"){ drawPlot(data); }
   else if (data.active === "rollcall"){ drawTally(data); }
+  else if (data.active === "recognition"){ drawRecognition(data); }
   else { drawNext(data); }
 }
 
@@ -990,9 +1098,15 @@ function drawSpots(d){
   var st = d.spots.filter(function(s){ return s.is_active; })[0];
   var sl = "";
   if (st){
-    sl = 'Input is <strong>' + (st.status === "open" ? "open" : "closed") + '</strong> for ' + esc(d.active_title) + '. ' +
+    var isRec = st.key === "recognition";
+    var openLbl = isRec ? "Hide the wall" : "Lock input";
+    var lockLbl = isRec ? "Reveal the wall" : "Open input";
+    var stateLbl = isRec
+      ? (st.status === "open" ? "collecting notes" : "wall is showing")
+      : (st.status === "open" ? "open" : "closed");
+    sl = 'Status, <strong>' + stateLbl + '</strong> for ' + esc(d.active_title) + '. ' +
       '<button class="toggle" onclick="toggleStatus(\\'' + st.key + '\\',\\'' + st.status + '\\')">' +
-      (st.status === "open" ? "Lock input" : "Open input") + '</button> ' +
+      (st.status === "open" ? openLbl : lockLbl) + '</button> ' +
       '<button class="toggle" onclick="clearSpot(\\'' + st.key + '\\')">Clear this spot</button>';
   }
   byid("statusline").innerHTML = sl;
@@ -1149,7 +1263,27 @@ def spot_submit(key):
             return jsonify({"ok": False})
         save_response(pid, "rollcall", {"driver": driver})
         return jsonify({"ok": True})
+    if key == "recognition":
+        to = data.get("to")
+        note = (data.get("note") or "").strip()
+        if to not in ROSTER_IDS or to == pid or not note:
+            return jsonify({"ok": False})
+        save_response(pid, "recognition", {"to": to, "note": note[:240]})
+        return jsonify({"ok": True})
     return jsonify({"ok": False})
+
+
+@app.route("/spot/recognition/peers")
+def recognition_peers():
+    pid = joined_pid()
+    if pid is None:
+        return jsonify([])
+    out = []
+    for rid, first, last, company, email in ROSTER:
+        if rid == pid:
+            continue
+        out.append({"id": rid, "name": first + " " + last})
+    return jsonify(out)
 
 
 @app.route("/spot/<key>/mine")
@@ -1261,13 +1395,25 @@ def host_data(secret):
     for rid, first, last, company, email in ROSTER:
         if rid in jset:
             joined.append({"id": rid, "first": first})
+    first_by_id = {r[0]: r[1] for r in ROSTER}
+    recognition = []
+    for rid, first, last, company, email in ROSTER:
+        r = get_response(rid, "recognition")
+        if r and r.get("to") in first_by_id and (r.get("note") or "").strip():
+            recognition.append({
+                "to": first_by_id.get(r["to"], ""),
+                "from": first,
+                "note": r["note"],
+            })
     return jsonify({
         "active": active,
+        "status": get_spot_status(active),
         "title": spot["title"],
         "anchor": spot.get("anchor", ""),
         "people": people,
         "rollcall": rollcall_tally(),
         "joined": joined,
+        "recognition": recognition,
     })
 
 
