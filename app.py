@@ -46,14 +46,14 @@ SPOTS = [
     {"key": "bingo", "day": 0, "title": "Principle Bingo", "anchor": "All 30 Human Relations Principles", "live": False},
     {"key": "rollcall", "day": 1, "title": "Roll Call", "anchor": "1A Build a Foundation, Five Drivers of Success", "live": True},
     {"key": "namegame", "day": 1, "title": "Name Game", "anchor": "1B Recall and Use Names, Pause Part Punch", "live": False},
-    {"key": "pegquiz", "day": 1, "title": "Peg Quiz", "anchor": "1C Peg Words 1 to 9", "live": False},
+    {"key": "pegquiz", "day": 1, "title": "Peg Quiz", "anchor": "1C Peg Words 1 to 9", "live": True},
     {"key": "breakthrough", "day": 1, "title": "Breakthrough Board", "anchor": "1C Commit to Enhance Relationships", "live": True},
     {"key": "principledraw", "day": 2, "title": "Principle Draw", "anchor": "Day 2 principle assignments", "live": False},
     {"key": "clearcloudy", "day": 2, "title": "Clear or Cloudy", "anchor": "2B Make Our Ideas Clear, Magic Formula", "live": False},
     {"key": "energizer", "day": 2, "title": "Energizer", "anchor": "2C Energize Our Communications", "live": False},
-    {"key": "worryvault", "day": 2, "title": "Worry Vault", "anchor": "2D Put Stress in Perspective", "live": False},
+    {"key": "worryvault", "day": 2, "title": "Worry Vault", "anchor": "2D Put Stress in Perspective", "live": True},
     {"key": "jeopardy", "day": 3, "title": "Quizo", "anchor": "Day Three review, all principle families plus Magic Formula, LIONS, and Worry", "live": True},
-    {"key": "taketheturn", "day": 3, "title": "Take the Turn", "anchor": "3B Disagree Agreeably, the Cushion", "live": False},
+    {"key": "taketheturn", "day": 3, "title": "Take the Turn", "anchor": "3B Disagree Agreeably, the Cushion", "live": True},
     {"key": "disc", "day": 3, "title": "Your DISC Lean", "anchor": "3C Develop More Flexibility, How People View Us", "live": True},
     {"key": "recognition", "day": 3, "title": "Recognition Wall", "anchor": "3D Build Others Through Recognition", "live": True},
 ]
@@ -263,6 +263,62 @@ def jvalue_for(cid):
         return JVALS[int(v)]
     except Exception:
         return 0
+
+
+# ---------------------------------------------------------------------------
+# Self scored quiz spots. Same engine, one bank per spot. Answers are checked
+# on the phone, a final score is submitted. Content grounded in the deck.
+# ---------------------------------------------------------------------------
+QUIZ_BANKS = {
+    "pegquiz": {
+        "title": "Peg Quiz",
+        "intro": "Match each number to its peg word. One tap per number.",
+        "questions": [
+            {"stem": "Peg word for 1?", "options": [{"t": "Run", "correct": True}, {"t": "Zoo"}, {"t": "Door"}, {"t": "Gate"}]},
+            {"stem": "Peg word for 2?", "options": [{"t": "Zoo", "correct": True}, {"t": "Tree"}, {"t": "Hive"}, {"t": "Wine"}]},
+            {"stem": "Peg word for 3?", "options": [{"t": "Tree", "correct": True}, {"t": "Door"}, {"t": "Run"}, {"t": "Sick"}]},
+            {"stem": "Peg word for 4?", "options": [{"t": "Door", "correct": True}, {"t": "Hive"}, {"t": "Zoo"}, {"t": "Heaven"}]},
+            {"stem": "Peg word for 5?", "options": [{"t": "Hive", "correct": True}, {"t": "Sick"}, {"t": "Tree"}, {"t": "Gate"}]},
+            {"stem": "Peg word for 6?", "options": [{"t": "Sick", "correct": True}, {"t": "Heaven"}, {"t": "Door"}, {"t": "Run"}]},
+            {"stem": "Peg word for 7?", "options": [{"t": "Heaven", "correct": True}, {"t": "Gate"}, {"t": "Hive"}, {"t": "Zoo"}]},
+            {"stem": "Peg word for 8?", "options": [{"t": "Gate", "correct": True}, {"t": "Wine"}, {"t": "Sick"}, {"t": "Tree"}]},
+            {"stem": "Peg word for 9?", "options": [{"t": "Wine", "correct": True}, {"t": "Run"}, {"t": "Heaven"}, {"t": "Door"}]},
+        ],
+    },
+    "taketheturn": {
+        "title": "Take the Turn",
+        "intro": "Disagree Agreeably. Pick the best answer for each.",
+        "questions": [
+            {"stem": "Which is a Cushion phrase?", "options": [
+                {"t": "I appreciate your view on that", "correct": True},
+                {"t": "But that misses the point"},
+                {"t": "However, you are mistaken"},
+                {"t": "Nevertheless, I disagree"}]},
+            {"stem": "Which words should you avoid when you disagree?", "options": [
+                {"t": "But, However, Nevertheless", "correct": True},
+                {"t": "I hear you saying"},
+                {"t": "I understand you said"},
+                {"t": "I appreciate your point"}]},
+            {"stem": "What is the first step when you take the turn?", "options": [
+                {"t": "Think", "correct": True},
+                {"t": "Cushion"},
+                {"t": "Speak"},
+                {"t": "Punch"}]},
+            {"stem": "In the Speak step, you back your opinion with this.", "options": [
+                {"t": "Evidence", "correct": True},
+                {"t": "Volume"},
+                {"t": "Emotion"},
+                {"t": "Repetition"}]},
+            {"stem": "What does a Cushion do?", "options": [
+                {"t": "Acknowledges their view before you respond", "correct": True},
+                {"t": "Tells them they are wrong"},
+                {"t": "Ends the conversation"},
+                {"t": "Raises your voice"}]},
+        ],
+    },
+}
+
+WORRY_PRINCIPLE = "Live in day tight compartments. Ask what is the worst that can happen, accept it, then improve on it."
 
 
 def get_conn():
@@ -837,6 +893,30 @@ def breakthrough_list():
     return out
 
 
+def quiz_list(key):
+    out = []
+    for rid, first, last, company, email in ROSTER:
+        r = get_response(rid, key)
+        if r and r.get("score") is not None:
+            try:
+                out.append({"name": first + " " + last,
+                            "score": int(r["score"]),
+                            "total": int(r.get("total", 0))})
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def worry_list():
+    out = []
+    for rid, first, last, company, email in ROSTER:
+        r = get_response(rid, "worryvault")
+        if r and (r.get("note") or "").strip():
+            out.append({"note": r["note"]})
+    random.shuffle(out)  # break any positional link to identity
+    return out
+
+
 PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -904,6 +984,7 @@ var LEAN = __LEAN__;
 var UPSELL = __UPSELL__;
 var DRIVERS = __DRIVERS__;
 var SPOT_TITLES = __SPOT_TITLES__;
+var QUIZBANKS = __QUIZBANKS__;
 var IS_PREVIEW = __PREVIEW__;
 
 var joined = IS_PREVIEW;
@@ -915,6 +996,10 @@ var jTimer = null;
 var jMounted = false;
 var wnTimer = null;
 var wnLastSig = "";
+var quizKey = null;
+var quizI = 0;
+var quizScore = 0;
+var quizBank = null;
 
 function esc(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 function el(id){ return document.getElementById(id); }
@@ -970,7 +1055,7 @@ function tick(){
   if (!joined){ return; }
   fetch("/state").then(function(r){ return r.json(); }).then(function(st){
     var changed = st.active !== renderedKey;
-    var revealKey = (st.active === "recognition" || st.active === "breakthrough");
+    var revealKey = (st.active === "recognition" || st.active === "breakthrough" || st.active === "worryvault");
     if (revealKey && st.status !== lastRecStatus){ changed = true; }
     if (revealKey){ lastRecStatus = st.status; }
     if (changed){
@@ -988,6 +1073,11 @@ function renderSpot(key, status){
   if (key === "rollcall"){ startRollcall(); return; }
   if (key === "jeopardy"){ startJeopardy(); return; }
   if (key === "who_next"){ startWhoNext(); return; }
+  if (key === "pegquiz" || key === "taketheturn"){ startQuiz(key); return; }
+  if (key === "worryvault"){
+    if (status === "locked"){ worryUp(); } else { startWorry(); }
+    return;
+  }
   if (key === "breakthrough"){
     if (status === "locked"){ breakthroughUp(); } else { startBreakthrough(); }
     return;
@@ -1273,6 +1363,112 @@ function breakthroughUp(){
     '<p class="small">The commitments the room made are on the main display.</p></div>';
 }
 
+// ----- Self scored quiz engine, shared by Peg Quiz and Take the Turn -----
+function startQuiz(key){
+  quizKey = key;
+  quizBank = QUIZBANKS[key];
+  if (!quizBank){ renderHold(key); return; }
+  setTitle(quizBank.title);
+  setBar(0);
+  el("sub").textContent = "Quick check";
+  fetch("/spot/" + key + "/mine").then(function(r){ return r.json(); }).then(function(mine){
+    if (mine && typeof mine.score === "number"){ quizResult(mine.score, mine.total); return; }
+    quizI = 0; quizScore = 0; quizQuestion();
+  }).catch(function(){ quizI = 0; quizScore = 0; quizQuestion(); });
+}
+
+function quizQuestion(){
+  var q = quizBank.questions[quizI];
+  el("sub").textContent = "Question " + (quizI + 1) + " of " + quizBank.questions.length;
+  setBar(Math.round(quizI / quizBank.questions.length * 100));
+  var opts = shuffle(q.options);
+  var h = '<p class="stem">' + esc(q.stem) + '</p>';
+  opts.forEach(function(o){
+    h += '<div class="opt" data-correct="' + (o.correct ? "1" : "0") + '" onclick="quizAnswer(this)">' + esc(o.t) + '</div>';
+  });
+  el("body").innerHTML = h;
+}
+
+function quizAnswer(elm){
+  var opts = document.querySelectorAll(".opt");
+  for (var i = 0; i < opts.length; i++){ opts[i].onclick = null; }
+  var correct = elm.getAttribute("data-correct") === "1";
+  if (correct){ quizScore += 1; }
+  for (var j = 0; j < opts.length; j++){
+    if (opts[j].getAttribute("data-correct") === "1"){ opts[j].style.background = "#e1f5ee"; opts[j].style.borderColor = "#0d9488"; }
+  }
+  if (!correct){ elm.style.background = "#fbeef0"; elm.style.borderColor = "#c65b73"; }
+  setTimeout(function(){
+    quizI += 1;
+    if (quizI >= quizBank.questions.length){ submitQuiz(); }
+    else { quizQuestion(); }
+  }, 700);
+}
+
+function submitQuiz(){
+  setBar(100);
+  el("sub").textContent = "Your score";
+  api("/spot/" + quizKey + "/submit", {score: quizScore, total: quizBank.questions.length})
+    .then(function(){ quizResult(quizScore, quizBank.questions.length); })
+    .catch(function(){ quizResult(quizScore, quizBank.questions.length); });
+}
+
+function quizResult(score, total){
+  setBar(100);
+  el("sub").textContent = "Done";
+  var pct = total ? Math.round(score / total * 100) : 0;
+  var msg = pct >= 80 ? "Sharp. You know these." : (pct >= 50 ? "Good start. Run it again to lock them in." : "Keep at it. Repetition is the trick.");
+  el("body").innerHTML =
+    '<div class="center">' +
+    '<div class="avatar" style="background:#0d9488">' + score + '</div>' +
+    '<p style="font-size:20px;font-weight:600;margin:6px 0 2px">' + score + ' of ' + total + '</p>' +
+    '<p style="font-size:13px;color:#5f6b76;margin:0 0 14px">' + esc(msg) + '</p></div>' +
+    '<button class="btn ghost" onclick="retakeQuiz()">Try again</button>';
+}
+
+function retakeQuiz(){ quizI = 0; quizScore = 0; quizQuestion(); }
+
+// ----- Worry Vault, anonymous stress in perspective -----
+function startWorry(){
+  setTitle("Worry Vault");
+  setBar(0);
+  el("sub").textContent = "In confidence";
+  fetch("/spot/worryvault/mine").then(function(r){ return r.json(); }).then(function(mine){
+    if (mine && mine.note){ worrySent(); return; }
+    el("body").innerHTML =
+      '<p class="stem">Name one worry or stress you have carried. It goes up anonymously, no name attached.</p>' +
+      '<textarea class="note" id="worrynote" placeholder="A worry I have carried"></textarea>' +
+      '<button class="btn" onclick="sendWorry()">Put it in the vault</button>';
+  });
+}
+
+function sendWorry(){
+  var note = (el("worrynote").value || "").trim();
+  if (!note){ el("sub").textContent = "Add a short note"; return; }
+  api("/spot/worryvault/submit", {note: note}).then(function(res){
+    if (res.ok){ worrySent(); }
+    else if (res.locked){ el("sub").textContent = "The vault is closed now"; }
+  });
+}
+
+function worrySent(){
+  setBar(100);
+  el("sub").textContent = "In the vault";
+  el("body").innerHTML =
+    '<div class="hold"><span class="tag">IN THE VAULT</span>' +
+    '<p class="big">Your worry is in, anonymously.</p>' +
+    '<p class="small">Watch the screen. You will see you are not carrying it alone.</p></div>';
+}
+
+function worryUp(){
+  setBar(100);
+  el("sub").textContent = "On the screen";
+  el("body").innerHTML =
+    '<div class="hold"><span class="tag">WORRY VAULT</span>' +
+    '<p class="big">Look up at the screen.</p>' +
+    '<p class="small">The room put its worries up. None of them have names.</p></div>';
+}
+
 // ----- DISC -----
 function startDisc(){
   setTitle("Your DISC Lean");
@@ -1403,6 +1599,10 @@ HOST_PAGE = """<!DOCTYPE html>
   .rnote .rfrom { display: block; font-size: 11px; color: #8a97a3; margin-top: 3px; }
   .nextup .big { font-size: 30px; font-weight: 600; margin: 10px 0 6px; }
   .nextup .an { font-size: 14px; color: #5f6b76; }
+  .qlist { padding: 8px 22px 24px; max-width: 560px; margin: 0 auto; }
+  .qrow { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid #e6ebef; }
+  .qrow .qn { font-size: 16px; font-weight: 500; color: #0f2942; }
+  .qrow .qs { font-size: 16px; font-weight: 700; color: #0d6e63; }
   .wnstage { padding: 46px 24px; text-align: center; }
   .wnstage .lab { font-size: 13px; font-weight: 600; letter-spacing: 2px; color: #0d6e63; text-transform: uppercase; }
   .wnstage .name { font-size: 46px; font-weight: 700; color: #0f2942; margin: 14px 0 8px; line-height: 1.1; }
@@ -1637,6 +1837,42 @@ function drawJeopardy(data){
   byid("stagebody").innerHTML = h;
 }
 
+function drawQuiz(data){
+  var q = data.quiz || {};
+  var rows = q.done || [];
+  byid("cnt").textContent = rows.length + " of 7 done";
+  var h = '<div class="recintro"><div class="lab">' + esc((q.title || "Quiz").toUpperCase()) + '</div>' +
+    '<div class="big">' + (rows.length ? "Scores are coming in" : "Take the quiz on your phone") + '</div></div>';
+  if (rows.length){
+    var sorted = rows.slice().sort(function(a, b){ return b.score - a.score; });
+    h += '<div class="qlist">';
+    sorted.forEach(function(r){
+      h += '<div class="qrow"><span class="qn">' + esc(r.name) + '</span><span class="qs">' + r.score + ' of ' + r.total + '</span></div>';
+    });
+    h += '</div>';
+  }
+  byid("stagebody").innerHTML = h;
+}
+
+function drawWorry(data){
+  if (data.status !== "locked"){
+    var n = (data.worry || []).length;
+    byid("cnt").textContent = n + " of 7 in";
+    byid("stagebody").innerHTML =
+      '<div class="recintro"><div class="lab">WORRY VAULT</div>' +
+      '<div class="big">The vault is filling</div>' +
+      '<div class="an">When the room is ready, lock input on your phone to open the vault.</div></div>';
+    return;
+  }
+  byid("cnt").textContent = (data.worry || []).length + " worries, no names";
+  var h = '<div class="wall">';
+  (data.worry || []).forEach(function(r){
+    h += '<div class="rcard"><p class="rnote">' + esc(r.note) + '</p></div>';
+  });
+  h += '</div>';
+  byid("stagebody").innerHTML = h;
+}
+
 function drawWhoNext(data){
   var w = data.whonext || {};
   byid("cnt").textContent = w.total ? (w.remaining + " of " + w.total + " left this round") : "";
@@ -1681,6 +1917,8 @@ function draw(data){
   else if (data.active === "rollcall"){ drawTally(data); }
   else if (data.active === "jeopardy"){ drawJeopardy(data); }
   else if (data.active === "who_next"){ drawWhoNext(data); }
+  else if (data.active === "pegquiz" || data.active === "taketheturn"){ drawQuiz(data); }
+  else if (data.active === "worryvault"){ drawWorry(data); }
   else if (data.active === "breakthrough"){ drawBreakthrough(data); }
   else if (data.active === "recognition"){ drawRecognition(data); }
   else { drawNext(data); }
@@ -1861,12 +2099,12 @@ function drawSpots(d){
     sl = 'Who is Next runs from the panel below. ' +
       '<button class="toggle" onclick="clearSpot(\\'who_next\\')">Reset round</button>';
   } else if (st){
-    var isReveal = (st.key === "recognition" || st.key === "breakthrough");
-    var noun = st.key === "breakthrough" ? "the board" : "the wall";
+    var isReveal = (st.key === "recognition" || st.key === "breakthrough" || st.key === "worryvault");
+    var noun = st.key === "breakthrough" ? "the board" : (st.key === "worryvault" ? "the vault" : "the wall");
     var openLbl = isReveal ? ("Reveal " + noun) : "Lock input";
     var lockLbl = isReveal ? ("Hide " + noun) : "Open input";
-    var collecting = st.key === "breakthrough" ? "collecting commitments" : "collecting notes";
-    var showing = st.key === "breakthrough" ? "board is showing" : "wall is showing";
+    var collecting = st.key === "breakthrough" ? "collecting commitments" : (st.key === "worryvault" ? "collecting worries" : "collecting notes");
+    var showing = st.key === "breakthrough" ? "board is showing" : (st.key === "worryvault" ? "vault is open" : "wall is showing");
     var stateLbl = isReveal
       ? (st.status === "open" ? collecting : showing)
       : (st.status === "open" ? "open" : "closed");
@@ -2047,6 +2285,7 @@ def render_participant(is_preview):
     html = html.replace("__UPSELL__", json.dumps(UPSELL))
     html = html.replace("__DRIVERS__", json.dumps(DRIVERS))
     html = html.replace("__SPOT_TITLES__", json.dumps({s["key"]: s["title"] for s in SPOTS}))
+    html = html.replace("__QUIZBANKS__", json.dumps(QUIZ_BANKS))
     html = html.replace("__PREVIEW__", "true" if is_preview else "false")
     return Response(html, mimetype="text/html")
 
@@ -2170,6 +2409,23 @@ def spot_submit(key):
             "breakthrough": breakthrough[:240],
             "action": action[:240],
         })
+        return jsonify({"ok": True})
+    if key in QUIZ_BANKS:
+        try:
+            score = int(data.get("score"))
+            total = int(data.get("total"))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False})
+        qn = len(QUIZ_BANKS[key]["questions"])
+        if total != qn or score < 0 or score > qn:
+            return jsonify({"ok": False})
+        save_response(pid, key, {"score": score, "total": total})
+        return jsonify({"ok": True})
+    if key == "worryvault":
+        note = (data.get("note") or "").strip()
+        if not note:
+            return jsonify({"ok": False})
+        save_response(pid, "worryvault", {"note": note[:240]})
         return jsonify({"ok": True})
     return jsonify({"ok": False})
 
@@ -2390,6 +2646,10 @@ def host_data(secret):
         payload["whonext"] = whonext_public()
     if active == "breakthrough":
         payload["breakthrough"] = breakthrough_list()
+    if active in QUIZ_BANKS:
+        payload["quiz"] = {"title": QUIZ_BANKS[active]["title"], "done": quiz_list(active)}
+    if active == "worryvault":
+        payload["worry"] = worry_list()
     return jsonify(payload)
 
 
