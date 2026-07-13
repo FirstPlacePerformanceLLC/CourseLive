@@ -42,6 +42,7 @@ ROSTER_IDS = [r[0] for r in ROSTER]
 # ---------------------------------------------------------------------------
 SPOTS = [
     {"key": "welcome", "day": 0, "title": "Welcome", "anchor": "Greet the room as students join", "live": True},
+    {"key": "holding", "day": 0, "title": "Holding", "anchor": "A clean pause between exercises", "live": True},
     {"key": "who_next", "day": 0, "title": "Who's Next", "anchor": "Random name picker, all three days", "live": True},
     {"key": "bingo", "day": 0, "title": "Principle Bingo", "anchor": "All 30 Human Relations Principles", "live": True},
     {"key": "rollcall", "day": 1, "title": "Roll Call", "anchor": "1A Build a Foundation, Five Drivers of Success", "live": True},
@@ -1520,6 +1521,7 @@ function renderSpot(key, status){
   if (ccTimer && key !== "clearcloudy"){ clearInterval(ccTimer); ccTimer = null; }
   if (bgTimer && key !== "bingo"){ clearInterval(bgTimer); bgTimer = null; }
   if (key === "welcome"){ renderJoined(); return; }
+  if (key === "holding"){ renderHoldScreen(); return; }
   if (key === "disc"){ startDisc(); return; }
   if (key === "rollcall"){ startRollcall(); return; }
   if (key === "jeopardy"){ startJeopardy(); return; }
@@ -1557,6 +1559,18 @@ function renderJoined(){
     '<span class="tag">YOU ARE IN</span>' +
     '<p class="big">See your name on the screen?</p>' +
     '<p class="small">You are all set. Watch the main screen, your phone will follow along when we start.</p>' +
+    '</div>';
+}
+
+function renderHoldScreen(){
+  setBar(0);
+  setTitle("CourseLive");
+  el("sub").textContent = "";
+  el("body").innerHTML =
+    '<div class="hold">' +
+    '<span class="tag">WATCH THE SCREEN</span>' +
+    '<p class="big">Back in a moment</p>' +
+    '<p class="small">Keep this open. Your phone will follow along when the next exercise starts.</p>' +
     '</div>';
 }
 
@@ -2306,6 +2320,8 @@ HOST_PAGE = """<!DOCTYPE html>
   .welcome .big { font-size: 40px; font-weight: 600; margin: 14px 0 6px; line-height: 1.15; }
   .welcome .dt { font-size: 15px; color: #b9c6d4; margin-bottom: 4px; }
   .welcome .cue { font-size: 14px; color: #7fd8c0; margin-top: 14px; }
+  .holdcard { text-align: center; padding: 96px 30px; }
+  .holdlogo { height: 92px; width: auto; opacity: 0.96; }
   .chiprow { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 26px; min-height: 40px; }
   .chip { background: rgba(255,255,255,0.08); border: 1px solid rgba(159,225,203,0.35); color: #fff; border-radius: 999px; padding: 9px 18px; font-size: 16px; font-weight: 500; animation: pop 0.55s cubic-bezier(0.2,0.8,0.3,1.2) both; }
   .chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #0d9488; margin-right: 8px; vertical-align: middle; }
@@ -2392,9 +2408,6 @@ HOST_PAGE = """<!DOCTYPE html>
     <div class="head"><span style="display:flex;align-items:center;gap:12px"><img src="/brand/logo.png" alt="Dale Carnegie Nevada" style="height:24px"><span class="ttl" id="stitle">CourseLive</span></span><span class="cnt" id="cnt"></span></div>
     <div id="stagebody"></div>
   </div>
-  <div class="tools">
-    <a class="link" href="/host/__SECRET__/admin">Open the admin console</a>
-  </div>
 </div>
 <script>
 var SECRET = "__SECRET__";
@@ -2480,6 +2493,12 @@ function mountWelcome(){
     '</div>';
   welcomeMounted = true;
   welcomeShown = {};
+}
+
+function drawHolding(data){
+  byid("cnt").textContent = "";
+  byid("stagebody").innerHTML =
+    '<div class="holdcard"><img src="/brand/logo.png" alt="Dale Carnegie Nevada" class="holdlogo"></div>';
 }
 
 function drawWelcome(data){
@@ -2752,9 +2771,10 @@ function drawBreakthrough(data){
 }
 
 function draw(data){
-  byid("stitle").textContent = data.title;
+  byid("stitle").textContent = (data.active === "holding") ? "" : data.title;
   if (data.active !== "welcome"){ welcomeMounted = false; }
-  if (data.active === "welcome"){ drawWelcome(data); }
+  if (data.active === "holding"){ drawHolding(data); }
+  else if (data.active === "welcome"){ drawWelcome(data); }
   else if (data.active === "disc"){ drawPlot(data); }
   else if (data.active === "rollcall"){ drawTally(data); }
   else if (data.active === "jeopardy"){ drawJeopardy(data); }
@@ -2856,7 +2876,6 @@ ADMIN_PAGE = """<!DOCTYPE html>
     <div style="display:flex;align-items:center;gap:12px"><img src="/brand/logo.png" alt="Dale Carnegie Nevada" style="height:24px"><div><div class="t1">CourseLive admin</div><div class="t2" id="activeline">loading</div></div></div>
     <div class="row2">
       <button class="mini" onclick="clearPreview()">Clear preview</button>
-      <button class="mini warn" onclick="clearAll()">Clear all</button>
     </div>
   </div>
 
@@ -2864,6 +2883,7 @@ ADMIN_PAGE = """<!DOCTYPE html>
   <div class="panel">
     <div class="spotgrid" id="spotgrid"></div>
     <div class="statusline" id="statusline"></div>
+    <div class="drill" style="margin-top:10px">Lock input closes the phones for the spot showing now. On Recognition, Breakthrough, Worry Vault, and Energizer that same button instead reveals the wall on the screen. Clear this spot wipes only the responses for the spot showing now and leaves every other spot and the recap untouched. Tap Holding for a clean pause between exercises, it puts a quiet logo on the room screen and holds every phone.</div>
   </div>
 
   <div id="jsection" style="display:none">
@@ -2939,11 +2959,6 @@ function clearSpot(key){
   post("/clear_spot", {key: key}).then(load);
 }
 function clearPreview(){ post("/clear_preview", {}).then(function(){ alert("Preview run cleared."); }); }
-function clearAll(){
-  var v = prompt("This erases every response and the recap data for all three days. This cannot be undone. Type CLEAR to confirm.");
-  if (v !== "CLEAR") return;
-  post("/clear", {}).then(load);
-}
 
 function drawSpots(d){
   byid("activeline").textContent = "Active now, " + d.active_title;
@@ -3793,33 +3808,6 @@ def host_data(secret):
             "called_short": [PRINCIPLE_SHORT[i] for i in called],
         }
     return jsonify(payload)
-
-
-@app.route("/host/<secret>/clear", methods=["POST"])
-def host_clear(secret):
-    if secret != HOST_SECRET:
-        return jsonify({"ok": False}), 404
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM answers")
-            cur.execute("DELETE FROM responses")
-            cur.execute("DELETE FROM participants")
-            cur.execute("DELETE FROM jeopardy_results")
-            cur.execute("DELETE FROM jeopardy_lockout")
-            cur.execute("DELETE FROM jeopardy_members")
-            cur.execute("""
-                UPDATE jeopardy_state
-                SET active_cid = NULL, phase = 'board', buzz_team = NULL,
-                    revealed = FALSE, winner_shown = FALSE
-                WHERE id = 1
-            """)
-            cur.execute("DELETE FROM whonext_done")
-            cur.execute("UPDATE whonext_state SET current_pid = NULL WHERE id = 1")
-            cur.execute("DELETE FROM principle_draw")
-            cur.execute("DELETE FROM bingo_called")
-            cur.execute("UPDATE bingo_state SET winner_pid = NULL, nonce = nonce + 1 WHERE id = 1")
-        conn.commit()
-    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------
