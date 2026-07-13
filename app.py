@@ -39,6 +39,7 @@ ROSTER_IDS = [r[0] for r in ROSTER]
 # one from coming to live.
 # ---------------------------------------------------------------------------
 SPOTS = [
+    {"key": "welcome", "day": 0, "title": "Welcome", "anchor": "Greet the room as students join", "live": True},
     {"key": "who_next", "day": 0, "title": "Who's Next", "anchor": "Random name picker, all three days", "live": False},
     {"key": "bingo", "day": 0, "title": "Principle Bingo", "anchor": "All 30 Human Relations Principles", "live": False},
     {"key": "rollcall", "day": 1, "title": "Roll Call", "anchor": "1A Build a Foundation, Five Drivers of Success", "live": True},
@@ -56,7 +57,7 @@ SPOTS = [
 ]
 
 SPOT_BY_KEY = {s["key"]: s for s in SPOTS}
-DEFAULT_ACTIVE = "disc"
+DEFAULT_ACTIVE = "welcome"
 
 # Roll Call, the Five Drivers for Success, grounded in the instructor manual.
 DRIVERS = [
@@ -548,9 +549,22 @@ function tick(){
 }
 
 function renderSpot(key){
+  if (key === "welcome"){ renderJoined(); return; }
   if (key === "disc"){ startDisc(); return; }
   if (key === "rollcall"){ startRollcall(); return; }
   renderHold(key);
+}
+
+function renderJoined(){
+  setBar(0);
+  setTitle("CourseLive");
+  el("sub").textContent = "You are in";
+  el("body").innerHTML =
+    '<div class="hold">' +
+    '<span class="tag">YOU ARE IN</span>' +
+    '<p class="big">See your name on the screen?</p>' +
+    '<p class="small">You are all set. Watch the main screen, your phone will follow along when we start.</p>' +
+    '</div>';
 }
 
 function renderHold(key){
@@ -705,6 +719,16 @@ HOST_PAGE = """<!DOCTYPE html>
   .trow .tl { font-size: 15px; font-weight: 500; margin-bottom: 5px; display: flex; justify-content: space-between; }
   .track { height: 20px; background: #e6ebef; border-radius: 6px; overflow: hidden; }
   .tf { height: 20px; background: #0d9488; border-radius: 6px; width: 0%; transition: width 0.4s; }
+  .welcome { background: #0f2942; padding: 46px 30px 40px; text-align: center; color: #fff; }
+  .welcome .ey { font-size: 14px; font-weight: 600; letter-spacing: 3px; color: #9fe1cb; text-transform: uppercase; }
+  .welcome .big { font-size: 40px; font-weight: 600; margin: 14px 0 6px; line-height: 1.15; }
+  .welcome .dt { font-size: 15px; color: #b9c6d4; margin-bottom: 4px; }
+  .welcome .cue { font-size: 14px; color: #7fd8c0; margin-top: 14px; }
+  .chiprow { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 26px; min-height: 40px; }
+  .chip { background: rgba(255,255,255,0.08); border: 1px solid rgba(159,225,203,0.35); color: #fff; border-radius: 999px; padding: 9px 18px; font-size: 16px; font-weight: 500; animation: pop 0.55s cubic-bezier(0.2,0.8,0.3,1.2) both; }
+  .chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #0d9488; margin-right: 8px; vertical-align: middle; }
+  @keyframes pop { 0% { opacity: 0; transform: translateY(14px) scale(0.9); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+  .wcount { font-size: 13px; color: #9fe1cb; margin-top: 20px; letter-spacing: 1px; }
   .nextup { padding: 40px 22px; text-align: center; }
   .nextup .lab { font-size: 13px; font-weight: 600; letter-spacing: 1px; color: #0d6e63; }
   .nextup .big { font-size: 30px; font-weight: 600; margin: 10px 0 6px; }
@@ -794,9 +818,44 @@ function drawNext(data){
     '<div class="an">' + esc(data.anchor || "") + '</div></div>';
 }
 
+var welcomeMounted = false;
+var welcomeShown = {};
+
+function mountWelcome(){
+  byid("stagebody").innerHTML =
+    '<div class="welcome">' +
+    '<div class="ey">Dale Carnegie Course</div>' +
+    '<div class="big">Welcome</div>' +
+    '<div class="dt">Reno, July 14 to 16 2026</div>' +
+    '<div class="cue">Pick your name on your phone to join</div>' +
+    '<div class="chiprow" id="chiprow"></div>' +
+    '<div class="wcount" id="wcount"></div>' +
+    '</div>';
+  welcomeMounted = true;
+  welcomeShown = {};
+}
+
+function drawWelcome(data){
+  byid("cnt").textContent = "";
+  if (!welcomeMounted){ mountWelcome(); }
+  var row = byid("chiprow");
+  (data.joined || []).forEach(function(p){
+    if (welcomeShown[p.id]){ return; }
+    welcomeShown[p.id] = true;
+    var chip = document.createElement("span");
+    chip.className = "chip";
+    chip.innerHTML = '<span class="dot"></span>' + esc(p.first);
+    row.appendChild(chip);
+  });
+  var n = (data.joined || []).length;
+  byid("wcount").textContent = n === 0 ? "Waiting for the room" : (n + " of 7 here");
+}
+
 function draw(data){
   byid("stitle").textContent = data.title;
-  if (data.active === "disc"){ drawPlot(data); }
+  if (data.active !== "welcome"){ welcomeMounted = false; }
+  if (data.active === "welcome"){ drawWelcome(data); }
+  else if (data.active === "disc"){ drawPlot(data); }
   else if (data.active === "rollcall"){ drawTally(data); }
   else { drawNext(data); }
 }
@@ -1194,12 +1253,21 @@ def host_data(secret):
             "done": answered >= len(QUESTIONS),
             "x": x, "y": y, "color": LEAN[primary]["color"],
         })
+    joined = []
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pid FROM participants WHERE pid <> %s", (PREVIEW_PID,))
+            jset = set(p for (p,) in cur.fetchall())
+    for rid, first, last, company, email in ROSTER:
+        if rid in jset:
+            joined.append({"id": rid, "first": first})
     return jsonify({
         "active": active,
         "title": spot["title"],
         "anchor": spot.get("anchor", ""),
         "people": people,
         "rollcall": rollcall_tally(),
+        "joined": joined,
     })
 
 
