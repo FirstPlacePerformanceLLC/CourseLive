@@ -2532,6 +2532,7 @@ var HOLD_LINES = [
 var holdMounted = false;
 var holdTimer = null;
 var holdIdx = 0;
+var holdOrder = [];
 var wnMounted = false;
 var wnSeq = -1;
 var wnAnimating = false;
@@ -2546,9 +2547,10 @@ function mountHolding(){
     '<div class="hhfoot">Reno, Nevada<span class="hhdot"></span>July 14 to 16, 2026</div>' +
     '</div></div>';
   holdMounted = true;
+  holdOrder = shuffleArr(HOLD_LINES);
   holdIdx = 0;
   var q = byid("hhquote");
-  q.textContent = HOLD_LINES[0];
+  q.textContent = holdOrder[0];
   q.style.opacity = 1;
   if (holdTimer){ clearInterval(holdTimer); }
   holdTimer = setInterval(rotateHold, 8000);
@@ -2559,8 +2561,9 @@ function rotateHold(){
   if (!q){ return; }
   q.style.opacity = 0;
   setTimeout(function(){
-    holdIdx = (holdIdx + 1) % HOLD_LINES.length;
-    q.textContent = HOLD_LINES[holdIdx];
+    holdIdx = holdIdx + 1;
+    if (holdIdx >= holdOrder.length){ holdOrder = shuffleArr(HOLD_LINES); holdIdx = 0; }
+    q.textContent = holdOrder[holdIdx];
     q.style.opacity = 1;
   }, 600);
 }
