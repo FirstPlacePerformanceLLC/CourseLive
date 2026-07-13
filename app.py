@@ -17,6 +17,8 @@ HOST_SECRET = os.environ.get("HOST_SECRET", "CARNEGIE")
 PREVIEW_EMAIL = os.environ.get("PREVIEW_EMAIL", FROM_EMAIL)
 
 PREVIEW_PID = 0
+JOIN_URL = "https://courselive-production.up.railway.app"
+JOIN_QR_SVG_B64 = "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OTIiIGhlaWdodD0iNDkyIiBjbGFzcz0ic2Vnbm8iPjxnIHRyYW5zZm9ybT0ic2NhbGUoMTIpIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMCAwaDQxdjQxaC00MXoiLz48cGF0aCBjbGFzcz0icXJsaW5lIiBzdHJva2U9IiMwZjI5NDIiIGQ9Ik00IDQuNWg3bTEgMGgzbTIgMGgxbTEgMGgxbTIgMGgybTEgMGgzbTIgMGg3bS0zMyAxaDFtNSAwaDFtMSAwaDFtMSAwaDFtMyAwaDRtMSAwaDFtMSAwaDRtMSAwaDFtNSAwaDFtLTMzIDFoMW0xIDBoM20xIDBoMW0xIDBoMW0yIDBoMW00IDBoMW0xIDBoM20xIDBoM20xIDBoMW0xIDBoM20xIDBoMW0tMzMgMWgxbTEgMGgzbTEgMGgxbTEgMGgxbTIgMGgybTIgMGgzbTEgMGgxbTIgMGgybTIgMGgxbTEgMGgzbTEgMGgxbS0zMyAxaDFtMSAwaDNtMSAwaDFtMSAwaDFtMiAwaDJtMSAwaDVtMSAwaDFtMiAwaDFtMiAwaDFtMSAwaDNtMSAwaDFtLTMzIDFoMW01IDBoMW0yIDBoMm0yIDBoMW0yIDBoMW0xIDBoMm0xIDBoNG0xIDBoMW01IDBoMW0tMzMgMWg3bTEgMGgxbTEgMGgxbTEgMGgxbTEgMGgxbTEgMGgxbTEgMGgxbTEgMGgxbTEgMGgxbTEgMGgxbTEgMGg3bS0yNSAxaDJtMSAwaDJtMSAwaDFtMSAwaDRtMSAwaDNtLTIzIDFoMm0xIDBoMW0xIDBoMm00IDBoMm0zIDBoMW0zIDBoMW0xIDBoMW0yIDBoMW0xIDBoNW0tMzIgMWgxbTIgMGgybTEgMGgzbTIgMGgybTYgMGgybTIgMGg0bTQgMGgxbS0zMiAxaDFtMSAwaDJtMSAwaDFtMSAwaDVtMyAwaDJtMiAwaDJtMiAwaDRtMiAwaDNtLTMzIDFoNG0xIDBoMW0xIDBoMW0xIDBoMW00IDBoMW0xIDBoMW0yIDBoMW0xIDBoMm01IDBoMW0zIDBoMW0tMzIgMWgxbTIgMGgzbTIgMGgxbTEgMGgxbTEgMGg0bTQgMGgxbTIgMGg0bTEgMGgxbTIgMGgxbS0yOSAxaDJtMSAwaDJtMSAwaDNtNCAwaDFtMiAwaDFtMyAwaDFtMSAwaDFtNSAwaDFtLTMzIDFoMW0yIDBoMW0yIDBoMW0xIDBoMm0yIDBoMW00IDBoMm0xIDBoMW00IDBoMW00IDBoM20tMzAgMWgxbTMgMGg0bTIgMGgxbTEgMGgxbTMgMGgxbTEgMGgxbTEgMGgxbTIgMGgxbTEgMGgxbTIgMGgxbS0zMiAxaDNtMSAwaDFtMSAwaDJtMiAwaDJtMSAwaDFtNyAwaDFtMyAwaDJtLTI3IDFoMW0xIDBoMW0xIDBoMm0xIDBoM20xIDBoM20zIDBoMm0xIDBoMm0yIDBoNG0zIDBoMm0tMzEgMWgzbTEgMGgxbTIgMGgxbTEgMGgxbTEgMGgxbTEgMGgxbTYgMGgxbTMgMGgxbTMgMGgzbS0zMyAxaDFtMSAwaDNtMiAwaDFtMSAwaDRtMiAwaDJtMSAwaDhtMSAwaDJtLTI4IDFoMm0xIDBoM20yIDBoMm0zIDBoM20yIDBoMW0xIDBoMW0yIDBoMW0xIDBoMW0yIDBoMW0xIDBoMm0tMjkgMWgybTUgMGgxbTEgMGgybTUgMGgxbTEgMGgxbTEgMGg0bTEgMGg0bS0zMyAxaDFtMiAwaDFtMSAwaDJtMSAwaDJtMSAwaDNtMSAwaDFtMSAwaDJtMyAwaDFtMSAwaDFtMSAwaDFtMiAwaDRtLTMyIDFoMW0xIDBoMW0zIDBoMm0xIDBoMW0zIDBoMW0yIDBoM20xIDBoMm0zIDBoMW0xIDBoMW0yIDBoMW0tMzIgMWgxbTEgMGgxbTIgMGgzbTEgMGgxbTEgMGgxbTEgMGgxbTYgMGgybTIgMGg1bTIgMGgxbS0yNCAxaDFtMSAwaDFtMSAwaDFtMSAwaDJtMSAwaDFtNCAwaDFtMSAwaDFtMyAwaDJtMiAwaDFtLTMzIDFoN20xIDBoMm0yIDBoMm0xIDBoMm0xIDBoMW0zIDBoM20xIDBoMW0xIDBoMW0xIDBoM20tMzMgMWgxbTUgMGgxbTMgMGgzbTEgMGg5bTEgMGgxbTMgMGgxbTIgMGgxbS0zMiAxaDFtMSAwaDNtMSAwaDFtMSAwaDJtMiAwaDJtMyAwaDFtMiAwaDNtMSAwaDZtMSAwaDJtLTMzIDFoMW0xIDBoM20xIDBoMW0yIDBoM20xIDBoMW0xIDBoMW0xIDBoMW0yIDBoMm0yIDBoMW0zIDBoMW0xIDBoM20tMzMgMWgxbTEgMGgzbTEgMGgxbTEgMGgxbTYgMGgxbTEgMGgybTEgMGgybTEgMGgxbTQgMGgybTIgMGgxbS0zMyAxaDFtNSAwaDFtMSAwaDJtMSAwaDJtMiAwaDFtNCAwaDJtMiAwaDFtMSAwaDFtMSAwaDFtMiAwaDFtLTMyIDFoN20yIDBoNG0xIDBoMW00IDBoM20xIDBoMm0zIDBoMW0yIDBoMiIvPjwvZz48L3N2Zz4K"
 
 NAVY = "#0f2942"
 TEAL = "#0d9488"
@@ -2328,11 +2330,28 @@ HOST_PAGE = """<!DOCTYPE html>
   .trow .tl { font-size: 15px; font-weight: 500; margin-bottom: 5px; display: flex; justify-content: space-between; }
   .track { height: 20px; background: #e6ebef; border-radius: 6px; overflow: hidden; }
   .tf { height: 20px; background: #0d9488; border-radius: 6px; width: 0%; transition: width 0.4s; }
-  .welcome { background: #0f2942; padding: 46px 30px 40px; text-align: center; color: #fff; }
-  .welcome .ey { font-size: 14px; font-weight: 600; letter-spacing: 3px; color: #9fe1cb; text-transform: uppercase; }
-  .welcome .big { font-size: 40px; font-weight: 600; margin: 14px 0 6px; line-height: 1.15; }
-  .welcome .dt { font-size: 15px; color: #b9c6d4; margin-bottom: 4px; }
-  .welcome .cue { font-size: 14px; color: #7fd8c0; margin-top: 14px; }
+  .welcome { background: #0f2942; color: #fff; padding: 26px 26px 22px; }
+  .weltop { display: grid; grid-template-columns: 232px 1fr; gap: 26px; align-items: center; }
+  .welcome.full .weltop { grid-template-columns: 108px 1fr; }
+  .weljoin { background: #fff; border-radius: 12px; padding: 18px; text-align: center; }
+  .weljlab { font-size: 12px; font-weight: 600; letter-spacing: 2px; color: #0d6e63; text-transform: uppercase; margin-bottom: 12px; }
+  .welqr { width: 152px; height: 152px; display: block; margin: 0 auto; border-radius: 8px; }
+  .welcome.full .welqr { width: 76px; height: 76px; }
+  .weljtype { font-size: 12px; color: #5f6b76; margin: 14px 0 6px; }
+  .wellink { font-size: 13px; font-weight: 600; color: #0f2942; background: #eef2f5; border-radius: 8px; padding: 8px 8px; word-break: break-all; }
+  .welcome.full .weljlab, .welcome.full .weljtype, .welcome.full .wellink { display: none; }
+  .welright { text-align: left; }
+  .weleyebrow { font-size: 13px; font-weight: 600; letter-spacing: 3px; color: #d4a017; text-transform: uppercase; margin-bottom: 14px; }
+  .welline { font-size: 30px; font-weight: 600; line-height: 1.28; color: #fff; transition: opacity 0.6s ease; min-height: 80px; }
+  .welrule { width: 56px; height: 3px; background: #d4a017; border-radius: 2px; margin: 20px 0 0; }
+  .weldate { font-size: 14px; letter-spacing: 1px; color: #9fb3c8; margin-top: 14px; }
+  .weltray { border-top: 1px solid #17324c; margin-top: 22px; padding-top: 16px; }
+  .weltraylab { font-size: 12px; font-weight: 600; letter-spacing: 2px; color: #7fa0bd; text-transform: uppercase; margin-bottom: 12px; }
+  .welchips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .welchip { display: inline-flex; align-items: center; gap: 8px; background: #14324e; border-radius: 20px; padding: 8px 16px; font-size: 16px; color: #fff; }
+  .welchip .cd { width: 8px; height: 8px; border-radius: 50%; background: #2dd4bf; }
+  .welchip.pop { animation: wnpop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1); }
+  .welghost { display: inline-flex; align-items: center; background: transparent; border: 1px dashed #2c4864; border-radius: 20px; padding: 8px 16px; font-size: 15px; color: #3f5f7d; }
   .holdhero { background: #0f2942; padding: 74px 44px; text-align: center; display: flex; align-items: center; justify-content: center; min-height: 320px; }
   .hhwrap { max-width: 860px; }
   .hheyebrow { font-size: 14px; font-weight: 600; letter-spacing: 3px; color: #d4a017; text-transform: uppercase; margin-bottom: 26px; }
@@ -2502,31 +2521,91 @@ function drawNext(data){
 
 var welcomeMounted = false;
 var welcomeShown = {};
+var welLineTimer = null;
+var welLineOrder = [];
+var welLineIdx = 0;
+var welJoinedSig = "";
+var welShown = {};
+var welFull = false;
 
 function mountWelcome(){
   byid("stagebody").innerHTML =
-    '<div class="welcome">' +
-    '<div class="ey">Dale Carnegie Course</div>' +
-    '<div class="big">Welcome</div>' +
-    '<div class="dt">Reno, July 14 to 16 2026</div>' +
-    '<div class="cue">Pick your name on your phone to join</div>' +
-    '<div class="chiprow" id="chiprow"></div>' +
-    '<div class="wcount" id="wcount"></div>' +
+    '<div class="welcome" id="welroot">' +
+    '<div class="weltop">' +
+    '<div class="weljoin">' +
+    '<div class="weljlab">Scan to join</div>' +
+    '<img class="welqr" src="/brand/joinqr.svg" alt="Scan to join CourseLive">' +
+    '<div class="weljtype">Or type it in</div>' +
+    '<div class="wellink">courselive-production.up.railway.app</div>' +
+    '</div>' +
+    '<div class="welright">' +
+    '<div class="weleyebrow">The Dale Carnegie Course</div>' +
+    '<div class="welline" id="welline"></div>' +
+    '<div class="welrule"></div>' +
+    '<div class="weldate">Reno, Nevada<span class="hhdot"></span>July 14 to 16, 2026</div>' +
+    '</div>' +
+    '</div>' +
+    '<div class="weltray">' +
+    '<div class="weltraylab">In the room</div>' +
+    '<div class="welchips" id="welchips"></div>' +
+    '</div>' +
     '</div>';
   welcomeMounted = true;
-  welcomeShown = {};
+  welShown = {};
+  welJoinedSig = "";
+  welFull = false;
+  welLineOrder = shuffleArr(HOLD_LINES);
+  welLineIdx = 0;
+  var ln = byid("welline");
+  if (ln){ ln.textContent = welLineOrder[0]; ln.style.opacity = 1; }
+  if (welLineTimer){ clearInterval(welLineTimer); }
+  welLineTimer = setInterval(rotateWelLine, 8000);
+}
+
+function rotateWelLine(){
+  var ln = byid("welline");
+  if (!ln){ return; }
+  ln.style.opacity = 0;
+  setTimeout(function(){
+    welLineIdx = welLineIdx + 1;
+    if (welLineIdx >= welLineOrder.length){ welLineOrder = shuffleArr(HOLD_LINES); welLineIdx = 0; }
+    ln.textContent = welLineOrder[welLineIdx];
+    ln.style.opacity = 1;
+  }, 600);
 }
 
 var HOLD_LINES = [
+  "Do not criticize, condemn, or complain.",
+  "Give honest, sincere appreciation.",
+  "Arouse in the other person an eager want.",
   "Become genuinely interested in other people.",
   "Smile.",
   "Remember that a person's name is, to them, the sweetest sound in any language.",
   "Be a good listener. Encourage others to talk about themselves.",
   "Talk in terms of the other person's interests.",
   "Make the other person feel important, and do it sincerely.",
-  "You can make more friends in two months by becoming interested in others than in two years trying to get others interested in you.",
+  "The only way to get the best of an argument is to avoid it.",
+  "Show respect for the other person's opinions.",
+  "If you are wrong, admit it quickly and emphatically.",
+  "Begin in a friendly way.",
+  "Get the other person saying yes, yes, right away.",
+  "Let the other person do a great deal of the talking.",
+  "Let the other person feel the idea is theirs.",
+  "Try honestly to see things from the other person's point of view.",
+  "Be sympathetic with the other person's ideas and desires.",
+  "Appeal to the nobler motives.",
+  "Dramatize your ideas.",
+  "Throw down a challenge.",
+  "Begin with praise and honest appreciation.",
+  "Call attention to mistakes indirectly.",
+  "Talk about your own mistakes before criticizing the other person.",
+  "Ask questions instead of giving direct orders.",
+  "Let the other person save face.",
+  "Praise the slightest improvement and praise every improvement.",
+  "Give the other person a fine reputation to live up to.",
+  "Use encouragement. Make the fault seem easy to correct.",
+  "Make the other person happy about doing what you suggest.",
   "Act enthusiastic and you will be enthusiastic.",
-  "Most great things are done by people who kept trying when there seemed to be no hope at all.",
   "Discouragement and failure are two of the surest stepping stones to success."
 ];
 var holdMounted = false;
@@ -2575,19 +2654,32 @@ function drawHolding(data){
 }
 
 function drawWelcome(data){
-  byid("cnt").textContent = "";
   if (!welcomeMounted){ mountWelcome(); }
-  var row = byid("chiprow");
-  (data.joined || []).forEach(function(p){
-    if (welcomeShown[p.id]){ return; }
-    welcomeShown[p.id] = true;
-    var chip = document.createElement("span");
-    chip.className = "chip";
-    chip.innerHTML = '<span class="dot"></span>' + esc(p.first);
-    row.appendChild(chip);
+  var joined = data.joined || [];
+  var n = joined.length;
+  byid("cnt").textContent = n === 0 ? "Waiting for the room" : (n + " of 7 here");
+  var full = (n >= 7);
+  if (full !== welFull){
+    welFull = full;
+    var root = byid("welroot");
+    if (root){ if (full){ root.classList.add("full"); } else { root.classList.remove("full"); } }
+  }
+  var sig = joined.map(function(p){ return p.id; }).join(",");
+  if (sig === welJoinedSig){ return; }
+  welJoinedSig = sig;
+  var wrap = byid("welchips");
+  if (!wrap){ return; }
+  var h = "";
+  joined.forEach(function(p){
+    var isNew = !welShown[p.id];
+    welShown[p.id] = true;
+    h += '<span class="welchip' + (isNew ? " pop" : "") + '"><span class="cd"></span>' + esc(p.first) + '</span>';
   });
-  var n = (data.joined || []).length;
-  byid("wcount").textContent = n === 0 ? "Waiting for the room" : (n + " of 7 here");
+  var slots = 7 - n;
+  for (var i = 0; i < slots; i++){
+    h += '<span class="welghost">waiting</span>';
+  }
+  wrap.innerHTML = h;
 }
 
 function drawRecognition(data){
@@ -2918,7 +3010,7 @@ function drawBreakthrough(data){
 
 function draw(data){
   byid("stitle").textContent = (data.active === "holding") ? "" : data.title;
-  if (data.active !== "welcome"){ welcomeMounted = false; }
+  if (data.active !== "welcome"){ welcomeMounted = false; if (welLineTimer){ clearInterval(welLineTimer); welLineTimer = null; } }
   if (data.active !== "holding"){ holdMounted = false; if (holdTimer){ clearInterval(holdTimer); holdTimer = null; } }
   if (data.active !== "who_next"){ wnMounted = false; wnAnimating = false; if (wnReelTimer){ clearTimeout(wnReelTimer); wnReelTimer = null; } }
   if (data.active === "holding"){ drawHolding(data); }
@@ -2954,7 +3046,7 @@ ADMIN_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>CourseLive admin</title>
 <link rel="icon" href="/brand/icon.png">
 <link rel="apple-touch-icon" href="/brand/icon.png">
@@ -2971,7 +3063,9 @@ ADMIN_PAGE = """<!DOCTYPE html>
   .top .t1 { font-size: 17px; font-weight: 600; }
   .top .t2 { font-size: 13px; color: #9fe1cb; }
   .spotgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-  .spot { border: 1px solid #d7dde3; border-radius: 10px; padding: 9px 11px; cursor: pointer; }
+  .spot { border: 1px solid #d7dde3; border-radius: 10px; padding: 9px 11px; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: rgba(13,148,136,0.25); }
+  .spot:active { transform: scale(0.97); }
+  button, .toggle, .mini, .btn-wn { touch-action: manipulation; -webkit-tap-highlight-color: rgba(13,148,136,0.25); }
   .spot.active { border-color: #0d9488; background: #e1f5ee; }
   .spot.coming { opacity: 0.55; }
   .spot .sk { font-size: 13px; font-weight: 500; }
@@ -3095,8 +3189,25 @@ function post(path, body){
   }).then(function(r){ return r.json(); });
 }
 
-function setActive(key){ post("/active", {key: key}).then(load); }
-function toggleStatus(key, cur){ post("/status", {key: key, status: (cur === "open" ? "locked" : "open")}).then(load); }
+var spotsSig = "";
+var rosterSig = "";
+var suppressSpotsUntil = 0;
+
+function setActive(key){
+  suppressSpotsUntil = Date.now() + 4000;
+  var tiles = document.querySelectorAll("#spotgrid .spot");
+  for (var i = 0; i < tiles.length; i++){
+    if (tiles[i].getAttribute("data-key") === key){
+      tiles[i].classList.add("active");
+      var sk = tiles[i].querySelector(".sk");
+      if (sk){ byid("activeline").textContent = "Active now, " + sk.textContent; }
+    } else {
+      tiles[i].classList.remove("active");
+    }
+  }
+  post("/active", {key: key}).then(function(){ suppressSpotsUntil = 0; spotsSig = ""; load(); });
+}
+function toggleStatus(key, cur){ spotsSig = ""; post("/status", {key: key, status: (cur === "open" ? "locked" : "open")}).then(load); }
 function resend(pid){
   post("/resend", {pid: pid}).then(function(res){
     alert(res.ok ? "Result email sent." : "Could not send.");
@@ -3109,12 +3220,16 @@ function clearSpot(key){
 function clearPreview(){ post("/clear_preview", {}).then(function(){ alert("Preview run cleared."); }); }
 
 function drawSpots(d){
+  if (Date.now() < suppressSpotsUntil){ return; }
+  var sig = JSON.stringify(d.spots.map(function(s){ return [s.key, s.is_active, s.live, s.status]; })) + "|" + d.active_title;
+  if (sig === spotsSig){ return; }
+  spotsSig = sig;
   byid("activeline").textContent = "Active now, " + d.active_title;
   var h = "";
   d.spots.forEach(function(s){
     var cls = "spot" + (s.is_active ? " active" : "") + (s.live ? "" : " coming");
     var coming = s.live ? "" : '<div class="sc">COMING</div>';
-    h += '<div class="' + cls + '" onclick="setActive(\\'' + s.key + '\\')">' +
+    h += '<div class="' + cls + '" data-key="' + s.key + '" onclick="setActive(\\'' + s.key + '\\')">' +
          '<div class="sk">' + esc(s.title) + '</div>' +
          '<div class="sd">Day ' + (s.day === 0 ? "any" : s.day) + '</div>' + coming + '</div>';
   });
@@ -3158,6 +3273,9 @@ function drawSpots(d){
 }
 
 function drawRoster(d){
+  var rsig = JSON.stringify(d.roster);
+  if (rsig === rosterSig){ return; }
+  rosterSig = rsig;
   var h = "";
   d.roster.forEach(function(p){
     var inpill = p.joined ? '<span class="pill in">in</span>' : '<span class="pill out">out</span>';
@@ -3380,7 +3498,7 @@ function load(){
 }
 
 load();
-setInterval(load, 1500);
+setInterval(load, 2500);
 </script>
 </body>
 </html>
@@ -4304,6 +4422,11 @@ def brand_logo():
 @app.route("/brand/icon.png")
 def brand_icon():
     return Response(base64.b64decode(BRAND_ICON_B64), mimetype="image/png")
+
+
+@app.route("/brand/joinqr.svg")
+def brand_joinqr():
+    return Response(base64.b64decode(JOIN_QR_SVG_B64), mimetype="image/svg+xml")
 
 
 if __name__ == "__main__":
