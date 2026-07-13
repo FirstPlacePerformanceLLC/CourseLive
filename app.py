@@ -42,7 +42,7 @@ ROSTER_IDS = [r[0] for r in ROSTER]
 # ---------------------------------------------------------------------------
 SPOTS = [
     {"key": "welcome", "day": 0, "title": "Welcome", "anchor": "Greet the room as students join", "live": True},
-    {"key": "holding", "day": 0, "title": "Holding", "anchor": "A clean pause between exercises", "live": True},
+    {"key": "holding", "day": 0, "title": "Holding", "anchor": "", "live": True},
     {"key": "who_next", "day": 0, "title": "Who's Next", "anchor": "Random name picker, all three days", "live": True},
     {"key": "bingo", "day": 0, "title": "Principle Bingo", "anchor": "All 30 Human Relations Principles", "live": True},
     {"key": "rollcall", "day": 1, "title": "Roll Call", "anchor": "1A Build a Foundation, Five Drivers of Success", "live": True},
@@ -1568,9 +1568,9 @@ function renderHoldScreen(){
   el("sub").textContent = "";
   el("body").innerHTML =
     '<div class="hold">' +
-    '<span class="tag">WATCH THE SCREEN</span>' +
-    '<p class="big">Back in a moment</p>' +
-    '<p class="small">Keep this open. Your phone will follow along when the next exercise starts.</p>' +
+    '<span class="tag">STAND BY</span>' +
+    '<p class="big">Eyes on the front</p>' +
+    '<p class="small">Keep this open. Your phone jumps back in the second we start the next one.</p>' +
     '</div>';
 }
 
@@ -2883,7 +2883,7 @@ ADMIN_PAGE = """<!DOCTYPE html>
   <div class="panel">
     <div class="spotgrid" id="spotgrid"></div>
     <div class="statusline" id="statusline"></div>
-    <div class="drill" style="margin-top:10px">Lock input closes the phones for the spot showing now. On Recognition, Breakthrough, Worry Vault, and Energizer that same button instead reveals the wall on the screen. Clear this spot wipes only the responses for the spot showing now and leaves every other spot and the recap untouched. Tap Holding for a clean pause between exercises, it puts a quiet logo on the room screen and holds every phone.</div>
+    <div class="drill" style="margin-top:10px">Lock input closes the phones for the spot showing now. On Recognition, Breakthrough, Worry Vault, and Energizer that same button instead reveals the wall on the screen. Clear this spot wipes only the responses for the spot showing now and leaves every other spot and the recap untouched. Tap Holding between exercises to drop a quiet logo on the room screen and hold every phone.</div>
   </div>
 
   <div id="jsection" style="display:none">
