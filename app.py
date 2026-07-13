@@ -45,11 +45,11 @@ SPOTS = [
     {"key": "who_next", "day": 0, "title": "Who's Next", "anchor": "Random name picker, all three days", "live": True},
     {"key": "bingo", "day": 0, "title": "Principle Bingo", "anchor": "All 30 Human Relations Principles", "live": False},
     {"key": "rollcall", "day": 1, "title": "Roll Call", "anchor": "1A Build a Foundation, Five Drivers of Success", "live": True},
-    {"key": "namegame", "day": 1, "title": "Name Game", "anchor": "1B Recall and Use Names, Pause Part Punch", "live": False},
+    {"key": "namegame", "day": 1, "title": "Name Game", "anchor": "1B Recall and Use Names, Pause Part Punch", "live": True},
     {"key": "pegquiz", "day": 1, "title": "Peg Quiz", "anchor": "1C Peg Words 1 to 9", "live": True},
     {"key": "breakthrough", "day": 1, "title": "Breakthrough Board", "anchor": "1C Commit to Enhance Relationships", "live": True},
-    {"key": "principledraw", "day": 2, "title": "Principle Draw", "anchor": "Day 2 principle assignments", "live": False},
-    {"key": "clearcloudy", "day": 2, "title": "Clear or Cloudy", "anchor": "2B Make Our Ideas Clear, Magic Formula", "live": False},
+    {"key": "principledraw", "day": 2, "title": "Principle Draw", "anchor": "Day 2 principle assignments", "live": True},
+    {"key": "clearcloudy", "day": 2, "title": "Clear or Cloudy", "anchor": "2B Make Our Ideas Clear, Magic Formula", "live": True},
     {"key": "energizer", "day": 2, "title": "Energizer", "anchor": "2C Energize Our Communications", "live": False},
     {"key": "worryvault", "day": 2, "title": "Worry Vault", "anchor": "2D Put Stress in Perspective", "live": True},
     {"key": "jeopardy", "day": 3, "title": "Quizo", "anchor": "Day Three review, all principle families plus Magic Formula, LIONS, and Worry", "live": True},
@@ -285,6 +285,32 @@ QUIZ_BANKS = {
             {"stem": "Peg word for 9?", "options": [{"t": "Wine", "correct": True}, {"t": "Run"}, {"t": "Heaven"}, {"t": "Door"}]},
         ],
     },
+    "namegame": {
+        "title": "Name Game",
+        "intro": "Stating your name with impact, and why names matter.",
+        "questions": [
+            {"stem": "Dale Carnegie's way to state your name with impact is called...", "options": [
+                {"t": "Pause, Part, Punch", "correct": True},
+                {"t": "Stop, Start, Shout"},
+                {"t": "Say it and move on"},
+                {"t": "Spell it out slowly"}]},
+            {"stem": "In Pause, Part, Punch, you punch your...", "options": [
+                {"t": "Last name", "correct": True},
+                {"t": "First name"},
+                {"t": "Job title"},
+                {"t": "Company"}]},
+            {"stem": "A person's name is to them the sweetest and most important...", "options": [
+                {"t": "Sound in any language", "correct": True},
+                {"t": "Word to forget"},
+                {"t": "Title to earn"},
+                {"t": "Fact to skip"}]},
+            {"stem": "Using someone's name in conversation makes them feel...", "options": [
+                {"t": "Important", "correct": True},
+                {"t": "Watched"},
+                {"t": "Pressured"},
+                {"t": "Ignored"}]},
+        ],
+    },
     "taketheturn": {
         "title": "Take the Turn",
         "intro": "Disagree Agreeably. Pick the best answer for each.",
@@ -319,6 +345,50 @@ QUIZ_BANKS = {
 }
 
 WORRY_PRINCIPLE = "Live in day tight compartments. Ask what is the worst that can happen, accept it, then improve on it."
+
+# The 30 Human Relations Principles, grounded in the deck, for Principle Draw.
+PRINCIPLES = [
+    "Do not criticize, condemn, or complain",
+    "Give honest, sincere appreciation",
+    "Arouse in the other person an eager want",
+    "Become genuinely interested in other people",
+    "Smile",
+    "Remember that a person's name is the sweetest sound to them",
+    "Be a good listener, encourage others to talk about themselves",
+    "Talk in terms of the other person's interests",
+    "Make the other person feel important, and do it sincerely",
+    "The only way to get the best of an argument is to avoid it",
+    "Show respect for the other person's opinion, never say you are wrong",
+    "If you are wrong, admit it quickly and emphatically",
+    "Begin in a friendly way",
+    "Get the other person saying yes, yes immediately",
+    "Let the other person do a great deal of the talking",
+    "Let the other person feel the idea is theirs",
+    "Try honestly to see things from the other person's point of view",
+    "Be sympathetic with the other person's ideas and desires",
+    "Appeal to nobler motives",
+    "Dramatize your ideas",
+    "Throw down a challenge",
+    "Begin with praise and honest appreciation",
+    "Call attention to people's mistakes indirectly",
+    "Talk about your own mistakes before criticizing the other person",
+    "Ask questions instead of giving direct orders",
+    "Let the other person save face",
+    "Praise the slightest improvement and praise every improvement",
+    "Give the other person a fine reputation to live up to",
+    "Use encouragement, make the fault seem easy to correct",
+    "Make the other person happy about doing the thing you suggest",
+]
+
+# Clear or Cloudy, the live LIONS feedback poll.
+CC_LIONS = [
+    {"key": "L", "label": "Language, keep it easily understood"},
+    {"key": "I", "label": "Illustrations, use them to clarify"},
+    {"key": "O", "label": "Organize your thoughts"},
+    {"key": "N", "label": "Narrow to key points"},
+    {"key": "S", "label": "Summarize the key points"},
+]
+CC_LIONS_KEYS = [x["key"] for x in CC_LIONS]
 
 
 def get_conn():
@@ -413,6 +483,12 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS whonext_state (
                     id INTEGER PRIMARY KEY,
                     current_pid INTEGER
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS principle_draw (
+                    pid INTEGER PRIMARY KEY,
+                    idx INTEGER NOT NULL
                 )
             """)
             cur.execute("""
@@ -917,6 +993,83 @@ def worry_list():
     return out
 
 
+# ----- Principle Draw -----
+def principledraw_map():
+    out = {}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pid, idx FROM principle_draw")
+            for pid, idx in cur.fetchall():
+                out[pid] = idx
+    return out
+
+
+def principledraw_for(pid):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT idx FROM principle_draw WHERE pid = %s", (pid,))
+            row = cur.fetchone()
+            if not row:
+                return None
+    idx = row[0]
+    if 0 <= idx < len(PRINCIPLES):
+        return {"idx": idx, "text": PRINCIPLES[idx]}
+    return None
+
+
+def principledraw_deal():
+    joined = whonext_joined_ids()
+    if not joined:
+        return 0
+    idxs = list(range(len(PRINCIPLES)))
+    random.shuffle(idxs)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM principle_draw")
+            for i, pid in enumerate(joined):
+                cur.execute("INSERT INTO principle_draw (pid, idx) VALUES (%s, %s)", (pid, idxs[i % len(idxs)]))
+        conn.commit()
+    return len(joined)
+
+
+def principledraw_reset():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM principle_draw")
+        conn.commit()
+
+
+def principledraw_public():
+    m = principledraw_map()
+    rows = []
+    for rid, first, last, company, email in ROSTER:
+        if rid in m:
+            idx = m[rid]
+            rows.append({"name": first + " " + last,
+                         "text": PRINCIPLES[idx] if 0 <= idx < len(PRINCIPLES) else ""})
+    return {"dealt": len(m), "rows": rows}
+
+
+# ----- Clear or Cloudy -----
+def clearcloudy_tally():
+    clear = 0
+    cloudy = 0
+    lions = {x["key"]: 0 for x in CC_LIONS}
+    for rid in ROSTER_IDS:
+        r = get_response(rid, "clearcloudy")
+        if not r:
+            continue
+        if r.get("verdict") == "clear":
+            clear += 1
+        elif r.get("verdict") == "cloudy":
+            cloudy += 1
+            k = r.get("lions")
+            if k in lions:
+                lions[k] += 1
+    lions_out = [{"key": x["key"], "label": x["label"], "count": lions[x["key"]]} for x in CC_LIONS]
+    return {"clear": clear, "cloudy": cloudy, "total": clear + cloudy, "lions": lions_out}
+
+
 PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -985,6 +1138,7 @@ var UPSELL = __UPSELL__;
 var DRIVERS = __DRIVERS__;
 var SPOT_TITLES = __SPOT_TITLES__;
 var QUIZBANKS = __QUIZBANKS__;
+var CCLIONS = __CCLIONS__;
 var IS_PREVIEW = __PREVIEW__;
 
 var joined = IS_PREVIEW;
@@ -1000,6 +1154,11 @@ var quizKey = null;
 var quizI = 0;
 var quizScore = 0;
 var quizBank = null;
+var pdTimer = null;
+var pdLastSig = "";
+var ccTimer = null;
+var ccLastSig = "";
+var ccBusy = false;
 
 function esc(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 function el(id){ return document.getElementById(id); }
@@ -1068,12 +1227,16 @@ function tick(){
 function renderSpot(key, status){
   if (jTimer && key !== "jeopardy"){ clearInterval(jTimer); jTimer = null; jMounted = false; }
   if (wnTimer && key !== "who_next"){ clearInterval(wnTimer); wnTimer = null; }
+  if (pdTimer && key !== "principledraw"){ clearInterval(pdTimer); pdTimer = null; }
+  if (ccTimer && key !== "clearcloudy"){ clearInterval(ccTimer); ccTimer = null; }
   if (key === "welcome"){ renderJoined(); return; }
   if (key === "disc"){ startDisc(); return; }
   if (key === "rollcall"){ startRollcall(); return; }
   if (key === "jeopardy"){ startJeopardy(); return; }
   if (key === "who_next"){ startWhoNext(); return; }
-  if (key === "pegquiz" || key === "taketheturn"){ startQuiz(key); return; }
+  if (key === "pegquiz" || key === "taketheturn" || key === "namegame"){ startQuiz(key); return; }
+  if (key === "principledraw"){ startPrincipleDraw(); return; }
+  if (key === "clearcloudy"){ startClearCloudy(); return; }
   if (key === "worryvault"){
     if (status === "locked"){ worryUp(); } else { startWorry(); }
     return;
@@ -1469,6 +1632,106 @@ function worryUp(){
     '<p class="small">The room put its worries up. None of them have names.</p></div>';
 }
 
+// ----- Principle Draw, deal a principle to each person -----
+function startPrincipleDraw(){
+  setTitle("Principle Draw");
+  setBar(0);
+  el("sub").textContent = "Your assignment";
+  el("body").innerHTML = '<div id="pdbody"></div>';
+  pdLastSig = "";
+  pdPoll();
+  if (pdTimer){ clearInterval(pdTimer); }
+  pdTimer = setInterval(pdPoll, 1400);
+}
+
+function pdPoll(){
+  fetch("/spot/principledraw/me").then(function(r){ return r.json(); }).then(function(d){
+    if (!d || d.ok === false){ return; }
+    var b = el("pdbody");
+    if (!b){ return; }
+    var sig = d.text || "none";
+    if (sig === pdLastSig){ return; }
+    pdLastSig = sig;
+    if (d.text){
+      setBar(100);
+      b.innerHTML = '<div class="center"><span class="tag">YOUR PRINCIPLE</span></div>' +
+        '<div class="box" style="background:#e1f5ee;margin-top:10px"><p class="txt" style="color:#0f6e56;font-size:16px;font-weight:500;line-height:1.5">' + esc(d.text) + '</p></div>' +
+        '<p class="note">Use this in your two minute Magic Formula. Evidence, Action, Benefit.</p>';
+    } else {
+      b.innerHTML = '<div class="hold"><span class="tag">PRINCIPLE DRAW</span>' +
+        '<p class="big">Get ready</p>' +
+        '<p class="small">Your host is about to deal everyone a principle. Watch the screen.</p></div>';
+    }
+  }).catch(function(){});
+}
+
+// ----- Clear or Cloudy, live LIONS feedback -----
+function startClearCloudy(){
+  setTitle("Clear or Cloudy");
+  setBar(0);
+  el("sub").textContent = "Rate the report";
+  el("body").innerHTML = '<div id="ccbody"></div>';
+  ccLastSig = "";
+  ccBusy = false;
+  ccPoll();
+  if (ccTimer){ clearInterval(ccTimer); }
+  ccTimer = setInterval(ccPoll, 1500);
+}
+
+function ccPoll(){
+  if (ccBusy){ return; }
+  fetch("/spot/clearcloudy/me").then(function(r){ return r.json(); }).then(function(d){
+    if (!d || d.ok === false){ return; }
+    var sig = d.status + "|" + (d.verdict || "none");
+    if (sig === ccLastSig){ return; }
+    ccLastSig = sig;
+    drawClearCloudy(d);
+  }).catch(function(){});
+}
+
+function drawClearCloudy(d){
+  var b = el("ccbody");
+  if (!b){ return; }
+  if (d.status === "locked"){
+    b.innerHTML = '<div class="hold"><span class="tag">CLEAR OR CLOUDY</span>' +
+      '<p class="big">Voting closed</p><p class="small">Look at the screen for the room read.</p></div>';
+    return;
+  }
+  if (d.verdict){
+    b.innerHTML = '<div class="center" style="margin-bottom:8px"><span class="tag">COUNTED</span></div>' +
+      '<p class="stem" style="text-align:center">You said ' + (d.verdict === "clear" ? "Clear" : "Cloudy") + '. Change it?</p>' +
+      '<button class="btn" onclick="ccVote()">Clear</button>' +
+      '<button class="btn gold" style="margin-top:10px" onclick="ccCloudy()">Cloudy</button>';
+    return;
+  }
+  b.innerHTML = '<p class="stem">Was that report clear or cloudy?</p>' +
+    '<button class="btn" onclick="ccVote()">Clear</button>' +
+    '<button class="btn gold" style="margin-top:10px" onclick="ccCloudy()">Cloudy</button>';
+}
+
+function ccVote(){
+  api("/spot/clearcloudy/submit", {verdict: "clear"}).then(function(){ ccLastSig = ""; ccPoll(); })
+    .catch(function(){ ccLastSig = ""; ccPoll(); });
+}
+
+function ccCloudy(){
+  ccBusy = true;
+  var h = '<p class="stem">Cloudy. Which LIONS piece was missing most?</p>';
+  CCLIONS.forEach(function(x){
+    h += '<div class="opt" onclick="ccSubmitCloudy(\\'' + x.key + '\\')">' + esc(x.label) + '</div>';
+  });
+  h += '<button class="btn ghost" onclick="ccBack()">Back</button>';
+  el("ccbody").innerHTML = h;
+}
+
+function ccBack(){ ccBusy = false; ccLastSig = ""; ccPoll(); }
+
+function ccSubmitCloudy(k){
+  ccBusy = false;
+  api("/spot/clearcloudy/submit", {verdict: "cloudy", lions: k}).then(function(){ ccLastSig = ""; ccPoll(); })
+    .catch(function(){ ccLastSig = ""; ccPoll(); });
+}
+
 // ----- DISC -----
 function startDisc(){
   setTitle("Your DISC Lean");
@@ -1603,6 +1866,16 @@ HOST_PAGE = """<!DOCTYPE html>
   .qrow { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid #e6ebef; }
   .qrow .qn { font-size: 16px; font-weight: 500; color: #0f2942; }
   .qrow .qs { font-size: 16px; font-weight: 700; color: #0d6e63; }
+  .pdlist { padding: 14px 20px 22px; }
+  .pdrow { display: flex; align-items: baseline; gap: 12px; padding: 10px 0; border-bottom: 1px solid #e6ebef; }
+  .pdrow .pdn { flex: 0 0 150px; font-size: 15px; font-weight: 600; color: #0f2942; }
+  .pdrow .pdp { font-size: 15px; color: #274766; line-height: 1.4; }
+  .cc { padding: 20px 22px 26px; }
+  .ccrow { margin-bottom: 14px; }
+  .ccrow .cctl { font-size: 15px; font-weight: 500; margin-bottom: 5px; display: flex; justify-content: space-between; }
+  .cctrack { height: 20px; background: #e6ebef; border-radius: 6px; overflow: hidden; }
+  .ccfill { height: 20px; border-radius: 6px; width: 0%; transition: width 0.4s; }
+  .cclab { font-size: 13px; font-weight: 600; color: #5f6b76; text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 10px; }
   .wnstage { padding: 46px 24px; text-align: center; }
   .wnstage .lab { font-size: 13px; font-weight: 600; letter-spacing: 2px; color: #0d6e63; text-transform: uppercase; }
   .wnstage .name { font-size: 46px; font-weight: 700; color: #0f2942; margin: 14px 0 8px; line-height: 1.1; }
@@ -1837,6 +2110,48 @@ function drawJeopardy(data){
   byid("stagebody").innerHTML = h;
 }
 
+function drawPrincipleDraw(data){
+  var p = data.principledraw || {};
+  var rows = p.rows || [];
+  byid("cnt").textContent = p.dealt ? (p.dealt + " dealt") : "";
+  if (!rows.length){
+    byid("stagebody").innerHTML =
+      '<div class="recintro"><div class="lab">PRINCIPLE DRAW</div>' +
+      '<div class="big">Ready to deal</div>' +
+      '<div class="an">Deal the principles from the console. Each person gets one.</div></div>';
+    return;
+  }
+  var h = '<div class="pdlist">';
+  rows.forEach(function(r){
+    h += '<div class="pdrow"><div class="pdn">' + esc(r.name) + '</div><div class="pdp">' + esc(r.text) + '</div></div>';
+  });
+  h += '</div>';
+  byid("stagebody").innerHTML = h;
+}
+
+function ccBarStage(label, count, max, color){
+  var pct = Math.round(count / max * 100);
+  return '<div class="ccrow"><div class="cctl"><span>' + esc(label) + '</span><span>' + count + '</span></div>' +
+    '<div class="cctrack"><div class="ccfill" style="width:' + pct + '%;background:' + color + '"></div></div></div>';
+}
+
+function drawCloud(data){
+  var t = data.clearcloudy || {clear: 0, cloudy: 0, total: 0, lions: []};
+  byid("cnt").textContent = t.total + " of 7 in";
+  var max = Math.max(t.clear, t.cloudy, 1);
+  var h = '<div class="cc">';
+  h += ccBarStage("Clear", t.clear, max, "#0d9488");
+  h += ccBarStage("Cloudy", t.cloudy, max, "#d4a017");
+  if (t.cloudy > 0){
+    h += '<div class="cclab">Where it got cloudy</div>';
+    var lmax = 1;
+    (t.lions || []).forEach(function(x){ if (x.count > lmax){ lmax = x.count; } });
+    (t.lions || []).forEach(function(x){ h += ccBarStage(x.label, x.count, lmax, "#3aa9c9"); });
+  }
+  h += '</div>';
+  byid("stagebody").innerHTML = h;
+}
+
 function drawQuiz(data){
   var q = data.quiz || {};
   var rows = q.done || [];
@@ -1917,7 +2232,9 @@ function draw(data){
   else if (data.active === "rollcall"){ drawTally(data); }
   else if (data.active === "jeopardy"){ drawJeopardy(data); }
   else if (data.active === "who_next"){ drawWhoNext(data); }
-  else if (data.active === "pegquiz" || data.active === "taketheturn"){ drawQuiz(data); }
+  else if (data.active === "pegquiz" || data.active === "taketheturn" || data.active === "namegame"){ drawQuiz(data); }
+  else if (data.active === "principledraw"){ drawPrincipleDraw(data); }
+  else if (data.active === "clearcloudy"){ drawCloud(data); }
   else if (data.active === "worryvault"){ drawWorry(data); }
   else if (data.active === "breakthrough"){ drawBreakthrough(data); }
   else if (data.active === "recognition"){ drawRecognition(data); }
@@ -2035,6 +2352,13 @@ ADMIN_PAGE = """<!DOCTYPE html>
     </div>
   </div>
 
+  <div id="pdsection" style="display:none">
+    <h2>Principle Draw</h2>
+    <div class="panel">
+      <div id="pdadmin"></div>
+    </div>
+  </div>
+
   <h2>The room</h2>
   <div class="panel">
     <table>
@@ -2098,6 +2422,15 @@ function drawSpots(d){
   } else if (st && st.key === "who_next"){
     sl = 'Who is Next runs from the panel below. ' +
       '<button class="toggle" onclick="clearSpot(\\'who_next\\')">Reset round</button>';
+  } else if (st && st.key === "principledraw"){
+    sl = 'Principle Draw runs from the panel below. ' +
+      '<button class="toggle" onclick="clearSpot(\\'principledraw\\')">Clear the draw</button>';
+  } else if (st && st.key === "clearcloudy"){
+    var votingOpen = st.status === "open";
+    sl = 'Voting is <strong>' + (votingOpen ? "open" : "closed") + '</strong> for Clear or Cloudy. ' +
+      '<button class="toggle" onclick="toggleStatus(\\'clearcloudy\\',\\'' + st.status + '\\')">' +
+      (votingOpen ? "Close voting" : "Open voting") + '</button> ' +
+      '<button class="toggle" onclick="clearSpot(\\'clearcloudy\\')">New speaker</button>';
   } else if (st){
     var isReveal = (st.key === "recognition" || st.key === "breakthrough" || st.key === "worryvault");
     var noun = st.key === "breakthrough" ? "the board" : (st.key === "worryvault" ? "the vault" : "the wall");
@@ -2225,9 +2558,29 @@ function drawJeopardyAdmin(d){
 }
 
 var wnAdminSig = "";
+var pdAdminSig = "";
 
 function pickNext(){ post("/whonext/pick", {}).then(function(){ wnAdminSig = ""; load(); }); }
 function resetWhoNext(){ if (!confirm("Reset the round so everyone is eligible again?")) return; post("/whonext/reset", {}).then(function(){ wnAdminSig = ""; load(); }); }
+function dealPrinciples(){ post("/principledraw/deal", {}).then(function(){ pdAdminSig = ""; load(); }); }
+function resetPrincipleDraw(){ if (!confirm("Clear the current draw?")) return; post("/principledraw/reset", {}).then(function(){ pdAdminSig = ""; load(); }); }
+
+function drawPrincipleDrawAdmin(d){
+  var p = d.principledraw || {};
+  var sig = JSON.stringify(p);
+  if (sig === pdAdminSig){ return; }
+  pdAdminSig = sig;
+  var h = '<button onclick="dealPrinciples()" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:600;font-family:inherit;cursor:pointer">Deal principles to the room</button>';
+  h += '<div style="font-size:12px;color:#5f6b76;margin:10px 0 6px">' + (p.dealt || 0) + ' dealt. Dealing again reshuffles everyone.</div>';
+  var rows = p.rows || [];
+  if (rows.length){
+    h += '<table><thead><tr><th>Name</th><th>Principle</th></tr></thead><tbody>';
+    rows.forEach(function(r){ h += '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.text) + '</td></tr>'; });
+    h += '</tbody></table>';
+  }
+  h += '<div class="row2"><button class="mini" onclick="resetPrincipleDraw()">Clear the draw</button></div>';
+  byid("pdadmin").innerHTML = h;
+}
 
 function drawWhoNextAdmin(d){
   var w = d.whonext || {};
@@ -2265,6 +2618,9 @@ function load(){
     var wns = byid("wnsection");
     if (d.active === "who_next"){ wns.style.display = "block"; drawWhoNextAdmin(d); }
     else { wns.style.display = "none"; wnAdminSig = ""; }
+    var pds = byid("pdsection");
+    if (d.active === "principledraw"){ pds.style.display = "block"; drawPrincipleDrawAdmin(d); }
+    else { pds.style.display = "none"; pdAdminSig = ""; }
   }).catch(function(){});
 }
 
@@ -2286,6 +2642,7 @@ def render_participant(is_preview):
     html = html.replace("__DRIVERS__", json.dumps(DRIVERS))
     html = html.replace("__SPOT_TITLES__", json.dumps({s["key"]: s["title"] for s in SPOTS}))
     html = html.replace("__QUIZBANKS__", json.dumps(QUIZ_BANKS))
+    html = html.replace("__CCLIONS__", json.dumps(CC_LIONS))
     html = html.replace("__PREVIEW__", "true" if is_preview else "false")
     return Response(html, mimetype="text/html")
 
@@ -2427,6 +2784,17 @@ def spot_submit(key):
             return jsonify({"ok": False})
         save_response(pid, "worryvault", {"note": note[:240]})
         return jsonify({"ok": True})
+    if key == "clearcloudy":
+        verdict = data.get("verdict")
+        if verdict not in ("clear", "cloudy"):
+            return jsonify({"ok": False})
+        payload = {"verdict": verdict}
+        if verdict == "cloudy":
+            lions = data.get("lions")
+            if lions in CC_LIONS_KEYS:
+                payload["lions"] = lions
+        save_response(pid, "clearcloudy", payload)
+        return jsonify({"ok": True})
     return jsonify({"ok": False})
 
 
@@ -2517,6 +2885,28 @@ def whonext_me():
         "current_pid": cur,
         "current_name": name,
         "you": (cur is not None and cur == pid),
+    })
+
+
+@app.route("/spot/principledraw/me")
+def principledraw_me():
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({"ok": False})
+    mine = principledraw_for(pid)
+    return jsonify({"ok": True, "text": mine["text"] if mine else None})
+
+
+@app.route("/spot/clearcloudy/me")
+def clearcloudy_me():
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({"ok": False})
+    r = get_response(pid, "clearcloudy")
+    return jsonify({
+        "ok": True,
+        "status": get_spot_status("clearcloudy"),
+        "verdict": r.get("verdict") if r else None,
     })
 
 
@@ -2650,6 +3040,10 @@ def host_data(secret):
         payload["quiz"] = {"title": QUIZ_BANKS[active]["title"], "done": quiz_list(active)}
     if active == "worryvault":
         payload["worry"] = worry_list()
+    if active == "principledraw":
+        payload["principledraw"] = principledraw_public()
+    if active == "clearcloudy":
+        payload["clearcloudy"] = clearcloudy_tally()
     return jsonify(payload)
 
 
@@ -2673,6 +3067,7 @@ def host_clear(secret):
             """)
             cur.execute("DELETE FROM whonext_done")
             cur.execute("UPDATE whonext_state SET current_pid = NULL WHERE id = 1")
+            cur.execute("DELETE FROM principle_draw")
         conn.commit()
     return jsonify({"ok": True})
 
@@ -2731,6 +3126,7 @@ def admin_data(secret):
         "jeopardy": jeopardy_board(for_host=True),
         "jmembers": jeopardy_members_map(),
         "whonext": whonext_public(),
+        "principledraw": principledraw_public(),
     })
 
 
@@ -2792,6 +3188,9 @@ def host_clear_spot(secret):
         return jsonify({"ok": True})
     if key == "who_next":
         whonext_reset()
+        return jsonify({"ok": True})
+    if key == "principledraw":
+        principledraw_reset()
         return jsonify({"ok": True})
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -2950,6 +3349,22 @@ def whonext_reset_route(secret):
     if secret != HOST_SECRET:
         return jsonify({"ok": False}), 404
     whonext_reset()
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/principledraw/deal", methods=["POST"])
+def principledraw_deal_route(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    n = principledraw_deal()
+    return jsonify({"ok": n > 0, "dealt": n})
+
+
+@app.route("/host/<secret>/principledraw/reset", methods=["POST"])
+def principledraw_reset_route(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    principledraw_reset()
     return jsonify({"ok": True})
 
 
