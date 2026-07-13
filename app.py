@@ -12,6 +12,9 @@ SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
 FROM_EMAIL = os.environ.get("FROM_EMAIL", "info@talklog.ai")
 FROM_NAME = os.environ.get("FROM_NAME", "Dale Carnegie Nevada")
 HOST_SECRET = os.environ.get("HOST_SECRET", "CARNEGIE")
+PREVIEW_EMAIL = os.environ.get("PREVIEW_EMAIL", FROM_EMAIL)
+
+PREVIEW_PID = 0
 
 NAVY = "#0f2942"
 TEAL = "#0d9488"
@@ -26,6 +29,45 @@ ROSTER = [
     (6, "Anthony", "Patton", "Western Nevada Supply", "apatton@goblueteam.com"),
     (7, "John", "Westby", "Western Nevada Supply", "jwestby@goblueteam.com"),
 ]
+
+ROSTER_IDS = [r[0] for r in ROSTER]
+
+# ---------------------------------------------------------------------------
+# Spot registry. The full three day course mapped to the app. Only spots
+# flagged live are wired this build. The rest render a holding screen and
+# appear in the admin selector marked coming, so each future build only flips
+# one from coming to live.
+# ---------------------------------------------------------------------------
+SPOTS = [
+    {"key": "who_next", "day": 0, "title": "Who's Next", "anchor": "Random name picker, all three days", "live": False},
+    {"key": "bingo", "day": 0, "title": "Principle Bingo", "anchor": "All 30 Human Relations Principles", "live": False},
+    {"key": "rollcall", "day": 1, "title": "Roll Call", "anchor": "1A Build a Foundation, Five Drivers of Success", "live": True},
+    {"key": "namegame", "day": 1, "title": "Name Game", "anchor": "1B Recall and Use Names, Pause Part Punch", "live": False},
+    {"key": "pegquiz", "day": 1, "title": "Peg Quiz", "anchor": "1C Peg Words 1 to 9", "live": False},
+    {"key": "breakthrough", "day": 1, "title": "Breakthrough Board", "anchor": "1C Commit to Enhance Relationships", "live": False},
+    {"key": "principledraw", "day": 2, "title": "Principle Draw", "anchor": "Day 2 principle assignments", "live": False},
+    {"key": "clearcloudy", "day": 2, "title": "Clear or Cloudy", "anchor": "2B Make Our Ideas Clear, Magic Formula", "live": False},
+    {"key": "energizer", "day": 2, "title": "Energizer", "anchor": "2C Energize Our Communications", "live": False},
+    {"key": "worryvault", "day": 2, "title": "Worry Vault", "anchor": "2D Put Stress in Perspective", "live": False},
+    {"key": "jeopardy", "day": 3, "title": "Jeopardy", "anchor": "3A Gain Willing Cooperation review", "live": False},
+    {"key": "taketheturn", "day": 3, "title": "Take the Turn", "anchor": "3B Disagree Agreeably, the Cushion", "live": False},
+    {"key": "disc", "day": 3, "title": "Your DISC Lean", "anchor": "3C Develop More Flexibility, How People View Us", "live": True},
+    {"key": "recognition", "day": 3, "title": "Recognition Wall", "anchor": "3D Build Others Through Recognition", "live": False},
+]
+
+SPOT_BY_KEY = {s["key"]: s for s in SPOTS}
+DEFAULT_ACTIVE = "disc"
+
+# Roll Call, the Five Drivers for Success, grounded in the instructor manual.
+DRIVERS = [
+    {"key": "confidence", "label": "Build greater self confidence"},
+    {"key": "people", "label": "Strengthen people skills"},
+    {"key": "communication", "label": "Enhance communication skills"},
+    {"key": "leadership", "label": "Develop leadership skills"},
+    {"key": "attitude", "label": "Reduce stress and improve attitude"},
+]
+DRIVER_KEYS = [d["key"] for d in DRIVERS]
+DRIVER_LABEL = {d["key"]: d["label"] for d in DRIVERS}
 
 QUESTIONS = [
     {
@@ -181,6 +223,36 @@ def init_db():
                     PRIMARY KEY (pid, qnum)
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS responses (
+                    pid INTEGER NOT NULL,
+                    spot_key TEXT NOT NULL,
+                    payload JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT now(),
+                    PRIMARY KEY (pid, spot_key)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS app_state (
+                    id INTEGER PRIMARY KEY,
+                    active_spot TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS spot_state (
+                    spot_key TEXT PRIMARY KEY,
+                    status TEXT NOT NULL DEFAULT 'open'
+                )
+            """)
+            cur.execute("""
+                INSERT INTO app_state (id, active_spot) VALUES (1, %s)
+                ON CONFLICT (id) DO NOTHING
+            """, (DEFAULT_ACTIVE,))
+            for s in SPOTS:
+                cur.execute("""
+                    INSERT INTO spot_state (spot_key, status) VALUES (%s, 'open')
+                    ON CONFLICT (spot_key) DO NOTHING
+                """, (s["key"],))
             for rid, first, last, company, email in ROSTER:
                 cur.execute("""
                     INSERT INTO roster (id, first, last, company, email)
@@ -194,6 +266,50 @@ def init_db():
         conn.commit()
 
 
+# ---------------------------------------------------------------------------
+# Active spot and status helpers
+# ---------------------------------------------------------------------------
+def get_active_spot():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT active_spot FROM app_state WHERE id = 1")
+            row = cur.fetchone()
+            return row[0] if row else DEFAULT_ACTIVE
+
+
+def set_active_spot(key):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE app_state SET active_spot = %s WHERE id = 1", (key,))
+        conn.commit()
+
+
+def get_spot_status(key):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM spot_state WHERE spot_key = %s", (key,))
+            row = cur.fetchone()
+            return row[0] if row else "open"
+
+
+def set_spot_status(key, status):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO spot_state (spot_key, status) VALUES (%s, %s)
+                ON CONFLICT (spot_key) DO UPDATE SET status = EXCLUDED.status
+            """, (key, status))
+        conn.commit()
+
+
+def spot_is_live(key):
+    s = SPOT_BY_KEY.get(key)
+    return bool(s and s["live"])
+
+
+# ---------------------------------------------------------------------------
+# Identity. pid 0 is the reserved PREVIEW identity, never a roster name.
+# ---------------------------------------------------------------------------
 def roster_row(pid):
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -201,6 +317,24 @@ def roster_row(pid):
             return cur.fetchone()
 
 
+def identity_for(pid):
+    if pid == PREVIEW_PID:
+        return (PREVIEW_PID, "Preview", "", "Preview run", PREVIEW_EMAIL)
+    return roster_row(pid)
+
+
+def joined_pid():
+    pid = session.get("pid")
+    if pid == PREVIEW_PID:
+        return PREVIEW_PID
+    if pid in ROSTER_IDS:
+        return pid
+    return None
+
+
+# ---------------------------------------------------------------------------
+# DISC scoring and plot, unchanged and unit tested
+# ---------------------------------------------------------------------------
 def tally_for(pid):
     counts = {"D": 0, "I": 0, "S": 0, "C": 0}
     with get_conn() as conn:
@@ -231,6 +365,56 @@ def plot_xy(counts):
     return people / answered, fast / answered
 
 
+def disc_answers_for(pid):
+    out = []
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT qnum, letter FROM answers WHERE pid = %s ORDER BY qnum", (pid,))
+            for qnum, letter in cur.fetchall():
+                out.append({"q": qnum, "letter": letter})
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Generic response helpers for poll style spots (Roll Call)
+# ---------------------------------------------------------------------------
+def save_response(pid, spot_key, payload):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO responses (pid, spot_key, payload)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (pid, spot_key) DO UPDATE
+                SET payload = EXCLUDED.payload, updated_at = now()
+            """, (pid, spot_key, json.dumps(payload)))
+        conn.commit()
+
+
+def get_response(pid, spot_key):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT payload FROM responses WHERE pid = %s AND spot_key = %s", (pid, spot_key))
+            row = cur.fetchone()
+            if not row:
+                return None
+            val = row[0]
+            if isinstance(val, str):
+                try:
+                    return json.loads(val)
+                except Exception:
+                    return None
+            return val
+
+
+def rollcall_tally():
+    counts = {d["key"]: 0 for d in DRIVERS}
+    for rid in ROSTER_IDS:
+        r = get_response(rid, "rollcall")
+        if r and r.get("driver") in counts:
+            counts[r["driver"]] += 1
+    return [{"key": d["key"], "label": d["label"], "count": counts[d["key"]]} for d in DRIVERS]
+
+
 def current_pid():
     return session.get("pid")
 
@@ -240,7 +424,7 @@ PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Your DISC Lean</title>
+<title>CourseLive</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
@@ -248,6 +432,7 @@ PAGE = """<!DOCTYPE html>
   * { box-sizing: border-box; }
   body { margin: 0; background: #eef2f5; font-family: Poppins, Arial, sans-serif; color: #0f2942; }
   .wrap { max-width: 480px; margin: 0 auto; min-height: 100vh; padding: 16px; }
+  .ribbon { background: #d4a017; color: #3d2c00; text-align: center; font-size: 12px; font-weight: 600; border-radius: 10px; padding: 6px; margin-bottom: 10px; }
   .card { background: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 2px 10px rgba(15,41,66,0.08); }
   .head { background: #0f2942; padding: 16px 18px; color: #fff; }
   .head h1 { font-size: 16px; font-weight: 600; margin: 0; }
@@ -271,14 +456,19 @@ PAGE = """<!DOCTYPE html>
   .box .lbl { font-size: 12px; font-weight: 600; margin: 0 0 3px; }
   .box .txt { font-size: 14px; margin: 0; line-height: 1.45; }
   .foot { font-size: 12px; color: #5f6b76; line-height: 1.5; border-top: 1px solid #e6ebef; padding-top: 12px; margin-top: 4px; }
-  .note { font-size: 12px; color: #5f6b76; margin-top: 12px; }
+  .note { font-size: 13px; color: #5f6b76; margin-top: 12px; line-height: 1.5; }
+  .hold { text-align: center; padding: 20px 6px; }
+  .hold .big { font-size: 20px; font-weight: 600; margin: 6px 0 8px; }
+  .hold .small { font-size: 14px; color: #5f6b76; line-height: 1.5; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; color: #0d6e63; background: #e1f5ee; border-radius: 999px; padding: 3px 10px; margin-bottom: 6px; }
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="ribbon" id="ribbon" style="display:none">PREVIEW MODE, this run is not counted</div>
   <div class="card">
     <div class="head">
-      <h1>Your DISC Lean</h1>
+      <h1 id="title">CourseLive</h1>
       <div class="sub" id="sub">Dale Carnegie Course, Reno</div>
       <div class="bar"><div class="fill" id="fill"></div></div>
     </div>
@@ -289,13 +479,18 @@ PAGE = """<!DOCTYPE html>
 var QUESTIONS = __QUESTIONS__;
 var LEAN = __LEAN__;
 var UPSELL = __UPSELL__;
-var state = "pick";
+var DRIVERS = __DRIVERS__;
+var SPOT_TITLES = __SPOT_TITLES__;
+var IS_PREVIEW = __PREVIEW__;
+
+var joined = IS_PREVIEW;
+var renderedKey = null;
 var qi = 0;
-var picked = null;
 
 function esc(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 function el(id){ return document.getElementById(id); }
 function setBar(pct){ el("fill").style.width = pct + "%"; }
+function setTitle(t){ el("title").textContent = t; }
 function shuffle(a){ a = a.slice(); for (var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 
 function api(path, body){
@@ -306,8 +501,10 @@ function api(path, body){
   }).then(function(r){ return r.json(); });
 }
 
+// ----- join by name -----
 function renderPick(){
   setBar(0);
+  setTitle("CourseLive");
   el("sub").textContent = "Tap your name to begin";
   fetch("/roster").then(function(r){ return r.json(); }).then(function(list){
     var h = '<p class="stem">Who are you?</p>';
@@ -323,7 +520,6 @@ function renderPick(){
 function choose(id){
   fetch("/roster").then(function(r){ return r.json(); }).then(function(list){
     var p = list.filter(function(x){ return x.id === id; })[0];
-    picked = p;
     el("sub").textContent = "Confirm";
     el("body").innerHTML =
       '<p class="stem">Is this you?</p>' +
@@ -336,8 +532,82 @@ function choose(id){
 
 function confirmPick(id){
   api("/pick", {pid: id}).then(function(res){
-    if (res.ok){ qi = 0; state = "quiz"; renderQuestion(); }
+    if (res.ok){ joined = true; renderedKey = null; tick(); }
   });
+}
+
+// ----- lobby, follows the active spot -----
+function tick(){
+  if (!joined){ return; }
+  fetch("/state").then(function(r){ return r.json(); }).then(function(st){
+    if (st.active !== renderedKey){
+      renderedKey = st.active;
+      renderSpot(st.active);
+    }
+  }).catch(function(){});
+}
+
+function renderSpot(key){
+  if (key === "disc"){ startDisc(); return; }
+  if (key === "rollcall"){ startRollcall(); return; }
+  renderHold(key);
+}
+
+function renderHold(key){
+  setBar(0);
+  var title = SPOT_TITLES[key] || "CourseLive";
+  setTitle("CourseLive");
+  el("sub").textContent = "Please wait";
+  el("body").innerHTML =
+    '<div class="hold">' +
+    '<span class="tag">NEXT UP</span>' +
+    '<p class="big">' + esc(title) + '</p>' +
+    '<p class="small">We will do this one together. Watch the main screen, your phone will follow along.</p>' +
+    '</div>';
+}
+
+// ----- Roll Call -----
+function startRollcall(){
+  setTitle("Roll Call");
+  setBar(0);
+  el("sub").textContent = "One tap";
+  fetch("/spot/rollcall/mine").then(function(r){ return r.json(); }).then(function(mine){
+    if (mine && mine.driver){ rollcallDone(mine.driver); return; }
+    var h = '<p class="stem">Which of the Five Drivers for Success do you most want to grow?</p>';
+    DRIVERS.forEach(function(d){
+      h += '<div class="opt" onclick="pickDriver(\\'' + d.key + '\\')">' + esc(d.label) + '</div>';
+    });
+    el("body").innerHTML = h;
+  });
+}
+
+function pickDriver(k){
+  api("/spot/rollcall/submit", {driver: k}).then(function(res){
+    if (res.ok){ rollcallDone(k); }
+  });
+}
+
+function rollcallDone(k){
+  setBar(100);
+  el("sub").textContent = "Logged";
+  var label = "";
+  DRIVERS.forEach(function(d){ if (d.key === k){ label = d.label; } });
+  el("body").innerHTML =
+    '<div class="hold">' +
+    '<span class="tag">YOUR DRIVER</span>' +
+    '<p class="big">' + esc(label) + '</p>' +
+    '<p class="small">Great choice. We will grow this over the three days. Watch the main screen.</p>' +
+    '</div>';
+}
+
+// ----- DISC -----
+function startDisc(){
+  setTitle("Your DISC Lean");
+  fetch("/result").then(function(r){ return r.json(); }).then(function(res){
+    if (res.ok && res.answered >= QUESTIONS.length){ renderResult(res); return; }
+    qi = res.ok ? res.answered : 0;
+    renderQuestion();
+  }).catch(function(){ qi = 0; renderQuestion(); });
 }
 
 function renderQuestion(){
@@ -353,7 +623,8 @@ function renderQuestion(){
 }
 
 function answer(letter){
-  api("/answer", {qnum: qi, letter: letter}).then(function(){
+  api("/answer", {qnum: qi, letter: letter}).then(function(res){
+    if (res && res.ok === false && res.locked){ el("sub").textContent = "Closed for now"; return; }
     qi += 1;
     if (qi >= QUESTIONS.length){ loadResult(); }
     else { renderQuestion(); }
@@ -369,6 +640,8 @@ function loadResult(){
 }
 
 function renderResult(res){
+  setBar(100);
+  el("sub").textContent = "Your result";
   var d = LEAN[res.primary];
   var headline = d.name;
   var leanLine = "you are leaning toward";
@@ -400,7 +673,10 @@ function emailMe(){
   }).catch(function(){ b.textContent = "Could not send, try again"; });
 }
 
-renderPick();
+// ----- boot -----
+if (IS_PREVIEW){ el("ribbon").style.display = "block"; }
+if (joined){ tick(); } else { renderPick(); }
+setInterval(function(){ if (joined){ tick(); } }, 2500);
 </script>
 </body>
 </html>
@@ -411,7 +687,7 @@ HOST_PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Your DISC Lean, the stage</title>
+<title>CourseLive, the stage</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
@@ -424,18 +700,29 @@ HOST_PAGE = """<!DOCTYPE html>
   .head .ttl { color: #fff; font-size: 18px; font-weight: 600; }
   .head .cnt { color: #9fe1cb; font-size: 13px; }
   .plot { padding: 10px 14px 16px; }
+  .tally { padding: 18px 22px 24px; }
+  .trow { margin-bottom: 14px; }
+  .trow .tl { font-size: 15px; font-weight: 500; margin-bottom: 5px; display: flex; justify-content: space-between; }
+  .track { height: 20px; background: #e6ebef; border-radius: 6px; overflow: hidden; }
+  .tf { height: 20px; background: #0d9488; border-radius: 6px; width: 0%; transition: width 0.4s; }
+  .nextup { padding: 40px 22px; text-align: center; }
+  .nextup .lab { font-size: 13px; font-weight: 600; letter-spacing: 1px; color: #0d6e63; }
+  .nextup .big { font-size: 30px; font-weight: 600; margin: 10px 0 6px; }
+  .nextup .an { font-size: 14px; color: #5f6b76; }
   .tools { display: flex; gap: 10px; margin-top: 14px; }
   .tbtn { background: #fff; color: #0f2942; border: 1px solid #d7dde3; border-radius: 10px; padding: 10px 16px; font-size: 13px; font-family: inherit; cursor: pointer; }
+  a.link { color: #0d6e63; font-size: 13px; text-decoration: none; margin-left: auto; align-self: center; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="stage">
-    <div class="head"><span class="ttl">Where the room lands</span><span class="cnt" id="cnt">0 of 7 in</span></div>
-    <div class="plot"><div id="plotwrap"></div></div>
+    <div class="head"><span class="ttl" id="stitle">CourseLive</span><span class="cnt" id="cnt"></span></div>
+    <div id="stagebody"></div>
   </div>
   <div class="tools">
     <button class="tbtn" onclick="clearAll()">Clear all responses</button>
+    <a class="link" href="/host/__SECRET__/admin">Open the admin console</a>
   </div>
 </div>
 <script>
@@ -443,6 +730,7 @@ var SECRET = "__SECRET__";
 var GL = 120, GR = 600, GT = 70, GB = 430;
 
 function esc(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function byid(id){ return document.getElementById(id); }
 
 function quadrants(){
   return '' +
@@ -464,8 +752,9 @@ function quadrants(){
     '<text x="360" y="450" fill="#5f6b76" font-size="11" text-anchor="middle">Measured, reserved</text>';
 }
 
-function draw(data){
-  el_cnt(data);
+function drawPlot(data){
+  var done = data.people.filter(function(p){ return p.done; }).length;
+  byid("cnt").textContent = done + " of " + data.people.length + " in";
   var dots = "";
   data.people.forEach(function(p){
     if (!p.answered) return;
@@ -477,13 +766,39 @@ function draw(data){
       '<text x="' + cx.toFixed(0) + '" y="' + (cy-13).toFixed(0) + '" text-anchor="middle" font-size="12" font-weight="500" fill="#0f2942">' + esc(p.first) + '</text>' +
       '</g>';
   });
-  var svg = '<svg viewBox="0 0 680 470" width="100%">' + quadrants() + dots + '</svg>';
-  document.getElementById("plotwrap").innerHTML = svg;
+  var svg = '<div class="plot"><svg viewBox="0 0 680 470" width="100%">' + quadrants() + dots + '</svg></div>';
+  byid("stagebody").innerHTML = svg;
 }
 
-function el_cnt(data){
-  var done = data.people.filter(function(p){ return p.done; }).length;
-  document.getElementById("cnt").textContent = done + " of " + data.people.length + " in";
+function drawTally(data){
+  var total = 0;
+  data.rollcall.forEach(function(t){ total += t.count; });
+  byid("cnt").textContent = total + " of 7 in";
+  var max = 1;
+  data.rollcall.forEach(function(t){ if (t.count > max){ max = t.count; } });
+  var h = '<div class="tally">';
+  data.rollcall.forEach(function(t){
+    var pct = Math.round(t.count / max * 100);
+    h += '<div class="trow"><div class="tl"><span>' + esc(t.label) + '</span><span>' + t.count + '</span></div>' +
+         '<div class="track"><div class="tf" style="width:' + pct + '%"></div></div></div>';
+  });
+  h += '</div>';
+  byid("stagebody").innerHTML = h;
+}
+
+function drawNext(data){
+  byid("cnt").textContent = "";
+  byid("stagebody").innerHTML =
+    '<div class="nextup"><div class="lab">NEXT UP</div>' +
+    '<div class="big">' + esc(data.title) + '</div>' +
+    '<div class="an">' + esc(data.anchor || "") + '</div></div>';
+}
+
+function draw(data){
+  byid("stitle").textContent = data.title;
+  if (data.active === "disc"){ drawPlot(data); }
+  else if (data.active === "rollcall"){ drawTally(data); }
+  else { drawNext(data); }
 }
 
 function poll(){
@@ -502,14 +817,193 @@ setInterval(poll, 2500);
 </html>
 """
 
+ADMIN_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CourseLive admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eef2f5; font-family: Poppins, Arial, sans-serif; color: #0f2942; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 18px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 22px 0 10px; }
+  .panel { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(15,41,66,0.08); padding: 14px 16px; }
+  .top { background: #0f2942; color: #fff; border-radius: 12px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; }
+  .top .t1 { font-size: 17px; font-weight: 600; }
+  .top .t2 { font-size: 13px; color: #9fe1cb; }
+  .spotgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .spot { border: 1px solid #d7dde3; border-radius: 10px; padding: 9px 11px; cursor: pointer; }
+  .spot.active { border-color: #0d9488; background: #e1f5ee; }
+  .spot.coming { opacity: 0.55; }
+  .spot .sk { font-size: 13px; font-weight: 500; }
+  .spot .sd { font-size: 11px; color: #5f6b76; }
+  .spot .sc { font-size: 10px; color: #b26a00; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid #eef2f5; vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; color: #5f6b76; letter-spacing: 0.5px; }
+  .pill { display: inline-block; font-size: 11px; border-radius: 999px; padding: 2px 9px; font-weight: 600; }
+  .pill.in { background: #e1f5ee; color: #0d6e63; }
+  .pill.out { background: #eef2f5; color: #8a97a3; }
+  .mini { background: #fff; color: #0f2942; border: 1px solid #d7dde3; border-radius: 8px; padding: 5px 10px; font-size: 12px; font-family: inherit; cursor: pointer; }
+  .mini.warn { color: #993556; border-color: #e3b8c4; }
+  .row2 { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .statusline { font-size: 12px; color: #5f6b76; margin-top: 8px; }
+  .toggle { font-size: 12px; font-family: inherit; border: 1px solid #d7dde3; background: #fff; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+  .drill { font-size: 12px; color: #5f6b76; margin-top: 4px; }
+  code { background: #f4f6f8; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><div class="t1">CourseLive admin</div><div class="t2" id="activeline">loading</div></div>
+    <div class="row2">
+      <button class="mini" onclick="clearPreview()">Clear preview</button>
+      <button class="mini warn" onclick="clearAll()">Clear all</button>
+    </div>
+  </div>
+
+  <h2>Active spot, tap one to put it on every phone</h2>
+  <div class="panel">
+    <div class="spotgrid" id="spotgrid"></div>
+    <div class="statusline" id="statusline"></div>
+  </div>
+
+  <h2>The room</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Name</th><th>In</th><th>DISC</th><th>Lean</th><th>Roll Call</th><th></th></tr></thead>
+      <tbody id="rosterbody"></tbody>
+    </table>
+  </div>
+
+  <h2>Preview</h2>
+  <div class="panel">
+    <div class="drill">Open <code>/preview</code> on your own phone to run the active spot as a test identity. It never counts and never shows on the stage. Clear preview wipes only that test run.</div>
+  </div>
+</div>
+<script>
+var SECRET = "__SECRET__";
+
+function esc(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function byid(id){ return document.getElementById(id); }
+
+function post(path, body){
+  return fetch("/host/" + SECRET + path, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(body || {})
+  }).then(function(r){ return r.json(); });
+}
+
+function setActive(key){ post("/active", {key: key}).then(load); }
+function toggleStatus(key, cur){ post("/status", {key: key, status: (cur === "open" ? "locked" : "open")}).then(load); }
+function resend(pid){
+  post("/resend", {pid: pid}).then(function(res){
+    alert(res.ok ? "Result email sent." : "Could not send.");
+  });
+}
+function clearSpot(key){
+  if (!confirm("Clear all responses for this spot?")) return;
+  post("/clear_spot", {key: key}).then(load);
+}
+function clearPreview(){ post("/clear_preview", {}).then(function(){ alert("Preview run cleared."); }); }
+function clearAll(){
+  if (!confirm("Clear every response in the whole room?")) return;
+  post("/clear", {}).then(load);
+}
+
+function drawSpots(d){
+  byid("activeline").textContent = "Active now, " + d.active_title;
+  var h = "";
+  d.spots.forEach(function(s){
+    var cls = "spot" + (s.is_active ? " active" : "") + (s.live ? "" : " coming");
+    var coming = s.live ? "" : '<div class="sc">COMING</div>';
+    h += '<div class="' + cls + '" onclick="setActive(\\'' + s.key + '\\')">' +
+         '<div class="sk">' + esc(s.title) + '</div>' +
+         '<div class="sd">Day ' + (s.day === 0 ? "any" : s.day) + '</div>' + coming + '</div>';
+  });
+  byid("spotgrid").innerHTML = h;
+  var st = d.spots.filter(function(s){ return s.is_active; })[0];
+  var sl = "";
+  if (st){
+    sl = 'Input is <strong>' + (st.status === "open" ? "open" : "closed") + '</strong> for ' + esc(d.active_title) + '. ' +
+      '<button class="toggle" onclick="toggleStatus(\\'' + st.key + '\\',\\'' + st.status + '\\')">' +
+      (st.status === "open" ? "Lock input" : "Open input") + '</button> ' +
+      '<button class="toggle" onclick="clearSpot(\\'' + st.key + '\\')">Clear this spot</button>';
+  }
+  byid("statusline").innerHTML = sl;
+}
+
+function drawRoster(d){
+  var h = "";
+  d.roster.forEach(function(p){
+    var inpill = p.joined ? '<span class="pill in">in</span>' : '<span class="pill out">out</span>';
+    var disc = p.disc_answered + " of " + p.disc_total;
+    var lean = "";
+    if (p.disc_primary){
+      lean = p.disc_blend ? (p.disc_primary + " and " + p.disc_blend) : p.disc_primary;
+    } else {
+      lean = "-";
+    }
+    var roll = p.rollcall ? esc(p.rollcall) : "-";
+    var actions = "";
+    if (p.disc_answered >= p.disc_total && p.disc_total > 0){
+      actions = '<button class="mini" onclick="resend(' + p.id + ')">Resend email</button>';
+    }
+    h += '<tr><td>' + esc(p.name) + '</td><td>' + inpill + '</td><td>' + disc + '</td><td>' +
+         esc(lean) + '</td><td>' + roll + '</td><td>' + actions + '</td></tr>';
+  });
+  byid("rosterbody").innerHTML = h;
+}
+
+function load(){
+  fetch("/host/" + SECRET + "/admin/data").then(function(r){ return r.json(); }).then(function(d){
+    drawSpots(d);
+    drawRoster(d);
+  }).catch(function(){});
+}
+
+load();
+setInterval(load, 3000);
+</script>
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Participant routes
+# ---------------------------------------------------------------------------
+def render_participant(is_preview):
+    html = PAGE.replace("__QUESTIONS__", json.dumps(QUESTIONS))
+    html = html.replace("__LEAN__", json.dumps(LEAN))
+    html = html.replace("__UPSELL__", json.dumps(UPSELL))
+    html = html.replace("__DRIVERS__", json.dumps(DRIVERS))
+    html = html.replace("__SPOT_TITLES__", json.dumps({s["key"]: s["title"] for s in SPOTS}))
+    html = html.replace("__PREVIEW__", "true" if is_preview else "false")
+    return Response(html, mimetype="text/html")
+
 
 @app.route("/")
 def index():
     init_db()
-    html = PAGE.replace("__QUESTIONS__", json.dumps(QUESTIONS))
-    html = html.replace("__LEAN__", json.dumps(LEAN))
-    html = html.replace("__UPSELL__", json.dumps(UPSELL))
-    return Response(html, mimetype="text/html")
+    return render_participant(False)
+
+
+@app.route("/preview")
+def preview():
+    init_db()
+    session["pid"] = PREVIEW_PID
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO participants (pid) VALUES (%s) ON CONFLICT (pid) DO NOTHING", (PREVIEW_PID,))
+        conn.commit()
+    return render_participant(True)
 
 
 @app.route("/roster")
@@ -521,12 +1015,17 @@ def roster():
     return jsonify(out)
 
 
+@app.route("/state")
+def state():
+    active = get_active_spot()
+    return jsonify({"active": active, "status": get_spot_status(active)})
+
+
 @app.route("/pick", methods=["POST"])
 def pick():
     data = request.get_json(silent=True) or {}
     pid = data.get("pid")
-    valid = [r[0] for r in ROSTER]
-    if pid not in valid:
+    if pid not in ROSTER_IDS:
         return jsonify({"ok": False})
     session["pid"] = pid
     with get_conn() as conn:
@@ -541,9 +1040,11 @@ def pick():
 
 @app.route("/answer", methods=["POST"])
 def answer():
-    pid = current_pid()
-    if not pid:
+    pid = joined_pid()
+    if pid is None:
         return jsonify({"ok": False})
+    if get_spot_status("disc") == "locked":
+        return jsonify({"ok": False, "locked": True})
     data = request.get_json(silent=True) or {}
     qnum = data.get("qnum")
     letter = data.get("letter")
@@ -564,13 +1065,41 @@ def answer():
 
 @app.route("/result")
 def result():
-    pid = current_pid()
-    if not pid:
+    pid = joined_pid()
+    if pid is None:
         return jsonify({"ok": False})
     counts = tally_for(pid)
     primary, blend, answered = lean_from_counts(counts)
     return jsonify({"ok": True, "primary": primary, "blend": blend,
                     "counts": counts, "answered": answered})
+
+
+@app.route("/spot/<key>/submit", methods=["POST"])
+def spot_submit(key):
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({"ok": False})
+    if not spot_is_live(key):
+        return jsonify({"ok": False})
+    if get_spot_status(key) == "locked":
+        return jsonify({"ok": False, "locked": True})
+    data = request.get_json(silent=True) or {}
+    if key == "rollcall":
+        driver = data.get("driver")
+        if driver not in DRIVER_KEYS:
+            return jsonify({"ok": False})
+        save_response(pid, "rollcall", {"driver": driver})
+        return jsonify({"ok": True})
+    return jsonify({"ok": False})
+
+
+@app.route("/spot/<key>/mine")
+def spot_mine(key):
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({})
+    r = get_response(pid, key)
+    return jsonify(r or {})
 
 
 def send_result_email(to_email, to_name, primary, blend):
@@ -620,10 +1149,10 @@ def send_result_email(to_email, to_name, primary, blend):
 
 @app.route("/email_me", methods=["POST"])
 def email_me():
-    pid = current_pid()
-    if not pid:
+    pid = joined_pid()
+    if pid is None:
         return jsonify({"ok": False})
-    row = roster_row(pid)
+    row = identity_for(pid)
     if not row:
         return jsonify({"ok": False})
     rid, first, last, company, email = row
@@ -631,10 +1160,14 @@ def email_me():
     primary, blend, answered = lean_from_counts(counts)
     if answered == 0:
         return jsonify({"ok": False})
-    res = send_result_email(email, first + " " + last, primary, blend)
+    name = (first + " " + last).strip()
+    res = send_result_email(email, name, primary, blend)
     return jsonify({"ok": bool(res.get("ok"))})
 
 
+# ---------------------------------------------------------------------------
+# Host stage
+# ---------------------------------------------------------------------------
 @app.route("/host/<secret>")
 def host(secret):
     if secret != HOST_SECRET:
@@ -648,6 +1181,8 @@ def host(secret):
 def host_data(secret):
     if secret != HOST_SECRET:
         return jsonify({"ok": False}), 404
+    active = get_active_spot()
+    spot = SPOT_BY_KEY.get(active, {"title": "CourseLive", "anchor": ""})
     people = []
     for rid, first, last, company, email in ROSTER:
         counts = tally_for(rid)
@@ -659,7 +1194,13 @@ def host_data(secret):
             "done": answered >= len(QUESTIONS),
             "x": x, "y": y, "color": LEAN[primary]["color"],
         })
-    return jsonify({"people": people})
+    return jsonify({
+        "active": active,
+        "title": spot["title"],
+        "anchor": spot.get("anchor", ""),
+        "people": people,
+        "rollcall": rollcall_tally(),
+    })
 
 
 @app.route("/host/<secret>/clear", methods=["POST"])
@@ -669,7 +1210,138 @@ def host_clear(secret):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM answers")
+            cur.execute("DELETE FROM responses")
             cur.execute("DELETE FROM participants")
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Admin console
+# ---------------------------------------------------------------------------
+@app.route("/host/<secret>/admin")
+def admin(secret):
+    if secret != HOST_SECRET:
+        return Response("Not found", status=404)
+    init_db()
+    html = ADMIN_PAGE.replace("__SECRET__", HOST_SECRET)
+    return Response(html, mimetype="text/html")
+
+
+@app.route("/host/<secret>/admin/data")
+def admin_data(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    active = get_active_spot()
+    active_title = SPOT_BY_KEY.get(active, {"title": "CourseLive"})["title"]
+    joined_set = set()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pid FROM participants WHERE pid <> %s", (PREVIEW_PID,))
+            for (p,) in cur.fetchall():
+                joined_set.add(p)
+    spots_out = []
+    for s in SPOTS:
+        spots_out.append({
+            "key": s["key"], "title": s["title"], "day": s["day"], "live": s["live"],
+            "is_active": s["key"] == active, "status": get_spot_status(s["key"]),
+        })
+    roster_out = []
+    for rid, first, last, company, email in ROSTER:
+        counts = tally_for(rid)
+        primary, blend, answered = lean_from_counts(counts)
+        rc = get_response(rid, "rollcall")
+        rc_label = DRIVER_LABEL.get(rc.get("driver")) if rc else None
+        roster_out.append({
+            "id": rid,
+            "name": first + " " + last,
+            "joined": rid in joined_set,
+            "disc_answered": answered,
+            "disc_total": len(QUESTIONS),
+            "disc_primary": primary if answered > 0 else None,
+            "disc_blend": blend if answered > 0 else None,
+            "rollcall": rc_label,
+        })
+    return jsonify({
+        "active": active,
+        "active_title": active_title,
+        "spots": spots_out,
+        "roster": roster_out,
+    })
+
+
+@app.route("/host/<secret>/active", methods=["POST"])
+def host_active(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    key = data.get("key")
+    if key not in SPOT_BY_KEY:
+        return jsonify({"ok": False})
+    set_active_spot(key)
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/status", methods=["POST"])
+def host_status(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    key = data.get("key")
+    status = data.get("status")
+    if key not in SPOT_BY_KEY or status not in ("open", "locked"):
+        return jsonify({"ok": False})
+    set_spot_status(key, status)
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/resend", methods=["POST"])
+def host_resend(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    pid = data.get("pid")
+    if pid not in ROSTER_IDS:
+        return jsonify({"ok": False})
+    row = roster_row(pid)
+    if not row:
+        return jsonify({"ok": False})
+    rid, first, last, company, email = row
+    counts = tally_for(pid)
+    primary, blend, answered = lean_from_counts(counts)
+    if answered == 0:
+        return jsonify({"ok": False})
+    res = send_result_email(email, first + " " + last, primary, blend)
+    return jsonify({"ok": bool(res.get("ok"))})
+
+
+@app.route("/host/<secret>/clear_spot", methods=["POST"])
+def host_clear_spot(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    key = data.get("key")
+    if key not in SPOT_BY_KEY:
+        return jsonify({"ok": False})
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            if key == "disc":
+                cur.execute("DELETE FROM answers")
+            else:
+                cur.execute("DELETE FROM responses WHERE spot_key = %s", (key,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/clear_preview", methods=["POST"])
+def host_clear_preview(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM answers WHERE pid = %s", (PREVIEW_PID,))
+            cur.execute("DELETE FROM responses WHERE pid = %s", (PREVIEW_PID,))
+            cur.execute("DELETE FROM participants WHERE pid = %s", (PREVIEW_PID,))
         conn.commit()
     return jsonify({"ok": True})
 
