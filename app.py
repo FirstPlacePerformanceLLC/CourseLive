@@ -56,6 +56,7 @@ SPOTS = [
     {"key": "taketheturn", "day": 3, "title": "Take the Turn", "anchor": "3B Disagree Agreeably, the Cushion", "live": True},
     {"key": "disc", "day": 3, "title": "Your DISC Lean", "anchor": "3C Develop More Flexibility, How People View Us", "live": True},
     {"key": "recognition", "day": 3, "title": "Recognition Wall", "anchor": "3D Build Others Through Recognition", "live": True},
+    {"key": "review", "day": 3, "title": "Your Recap", "anchor": "Each person's own three days, bundled with your note", "live": True},
 ]
 
 SPOT_BY_KEY = {s["key"]: s for s in SPOTS}
@@ -541,6 +542,12 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS bingo_called (
                     idx INTEGER PRIMARY KEY,
                     called_at TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS instructor_notes (
+                    pid INTEGER PRIMARY KEY,
+                    note TEXT NOT NULL DEFAULT ''
                 )
             """)
             cur.execute("""
@@ -1237,6 +1244,105 @@ def bingo_host_public():
     }
 
 
+# ----- Your Recap, the per person end of course review -----
+def get_note(pid):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT note FROM instructor_notes WHERE pid = %s", (pid,))
+            row = cur.fetchone()
+            return row[0] if row and row[0] else None
+
+
+def set_note(pid, note):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO instructor_notes (pid, note) VALUES (%s, %s)
+                ON CONFLICT (pid) DO UPDATE SET note = EXCLUDED.note
+            """, (pid, note))
+        conn.commit()
+
+
+def notes_map():
+    out = {}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pid, note FROM instructor_notes")
+            for pid, note in cur.fetchall():
+                out[pid] = note
+    return out
+
+
+def review_bundle(pid):
+    row = identity_for(pid)
+    if not row:
+        return None
+    rid, first, last, company, email = row
+    name = (first + " " + last).strip()
+    first_by_id = {r[0]: r[1] + " " + r[2] for r in ROSTER}
+
+    counts = tally_for(pid)
+    primary, blend, answered = lean_from_counts(counts)
+    disc = None
+    if answered > 0:
+        disc = {
+            "primary": primary,
+            "primary_name": LEAN[primary]["name"],
+            "blend_name": LEAN[blend]["name"] if blend else None,
+            "lead": LEAN[primary]["lead"],
+            "stretch": LEAN[primary]["stretch"],
+        }
+
+    rc = get_response(pid, "rollcall")
+    driver = DRIVER_LABEL.get(rc.get("driver")) if rc else None
+
+    bt = get_response(pid, "breakthrough")
+    breakthrough = None
+    if bt and (bt.get("action") or "").strip():
+        breakthrough = {"person": bt.get("person", ""), "breakthrough": bt.get("breakthrough", ""), "action": bt.get("action", "")}
+
+    wv = get_response(pid, "worryvault")
+    worry = wv.get("note") if wv and (wv.get("note") or "").strip() else None
+
+    quizzes = []
+    for key in ("namegame", "pegquiz", "taketheturn"):
+        r = get_response(pid, key)
+        if r and r.get("score") is not None:
+            try:
+                quizzes.append({"title": QUIZ_BANKS[key]["title"], "score": int(r["score"]), "total": int(r.get("total", 0))})
+            except (TypeError, ValueError):
+                pass
+
+    rg = get_response(pid, "recognition")
+    recognition_given = None
+    if rg and (rg.get("note") or "").strip() and rg.get("to") in first_by_id:
+        recognition_given = {"to": first_by_id.get(rg["to"], ""), "note": rg["note"]}
+    recognition_received = []
+    for oid, ofirst, olast, ocompany, oemail in ROSTER:
+        if oid == pid:
+            continue
+        orr = get_response(oid, "recognition")
+        if orr and orr.get("to") == pid and (orr.get("note") or "").strip():
+            recognition_received.append({"from": ofirst + " " + olast, "note": orr["note"]})
+
+    pdr = principledraw_for(pid)
+    principle = pdr["text"] if pdr else None
+
+    return {
+        "name": name,
+        "email": email,
+        "disc": disc,
+        "driver": driver,
+        "breakthrough": breakthrough,
+        "worry": worry,
+        "quizzes": quizzes,
+        "recognition_given": recognition_given,
+        "recognition_received": recognition_received,
+        "principle": principle,
+        "note": get_note(pid),
+    }
+
+
 PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1409,6 +1515,7 @@ function renderSpot(key, status){
   if (key === "jeopardy"){ startJeopardy(); return; }
   if (key === "who_next"){ startWhoNext(); return; }
   if (key === "bingo"){ startBingo(); return; }
+  if (key === "review"){ startReview(); return; }
   if (key === "pegquiz" || key === "taketheturn" || key === "namegame"){ startQuiz(key); return; }
   if (key === "principledraw"){ startPrincipleDraw(); return; }
   if (key === "clearcloudy"){ startClearCloudy(); return; }
@@ -1958,6 +2065,76 @@ function claimBingo(){
     .catch(function(){ bgLastSig = ""; bgPoll(); });
 }
 
+// ----- Your Recap -----
+function startReview(){
+  setTitle("Your Recap");
+  setBar(100);
+  el("sub").textContent = "Your three days";
+  el("body").innerHTML = '<div class="hold"><p class="small">Loading your recap...</p></div>';
+  fetch("/spot/review/me").then(function(r){ return r.json(); }).then(function(d){
+    if (!d || d.ok === false){ el("body").innerHTML = '<div class="hold"><p class="small">Could not load your recap.</p></div>'; return; }
+    drawReview(d);
+  }).catch(function(){ el("body").innerHTML = '<div class="hold"><p class="small">Could not load your recap.</p></div>'; });
+}
+
+function reviewSection(label, inner, bg){
+  return '<div class="box" style="background:' + (bg || "#f4f6f8") + '"><p class="lbl">' + esc(label) + '</p>' + inner + '</div>';
+}
+
+function drawReview(d){
+  var h = '<div class="center"><span class="tag">YOUR RECAP</span>' +
+    '<p style="font-size:20px;font-weight:600;margin:6px 0 2px">' + esc(d.name) + '</p>' +
+    '<p style="font-size:13px;color:#5f6b76;margin:0 0 14px">Your three days, in one place</p></div>';
+  if (d.note){
+    h += reviewSection("A note from your instructor", '<p class="txt">' + esc(d.note) + '</p>', "#faeeda");
+  }
+  if (d.disc){
+    var lean = d.disc.blend_name ? (d.disc.primary_name + " and " + d.disc.blend_name) : d.disc.primary_name;
+    h += reviewSection("Your DISC lean",
+      '<p class="txt"><strong>' + esc(lean) + '</strong></p>' +
+      '<p class="txt" style="margin-top:6px">You lead with ' + esc(d.disc.lead) + '. Your stretch is ' + esc(d.disc.stretch) + '</p>', "#e1f5ee");
+  }
+  if (d.driver){
+    h += reviewSection("The driver you chose to grow", '<p class="txt">' + esc(d.driver) + '</p>');
+  }
+  if (d.breakthrough){
+    h += reviewSection("Your relationship breakthrough",
+      '<p class="txt"><strong>' + esc(d.breakthrough.person) + '</strong></p>' +
+      '<p class="txt" style="margin-top:4px">' + esc(d.breakthrough.breakthrough) + '</p>' +
+      '<p class="txt" style="margin-top:4px">You will: ' + esc(d.breakthrough.action) + '</p>');
+  }
+  if (d.principle){
+    h += reviewSection("Your assigned principle", '<p class="txt">' + esc(d.principle) + '</p>');
+  }
+  if (d.quizzes && d.quizzes.length){
+    var qi = "";
+    d.quizzes.forEach(function(q){ qi += '<p class="txt">' + esc(q.title) + ': ' + q.score + ' of ' + q.total + '</p>'; });
+    h += reviewSection("Your quiz scores", qi);
+  }
+  if (d.recognition_given){
+    h += reviewSection("Recognition you gave", '<p class="txt">To ' + esc(d.recognition_given.to) + ': ' + esc(d.recognition_given.note) + '</p>');
+  }
+  if (d.recognition_received && d.recognition_received.length){
+    var ri = "";
+    d.recognition_received.forEach(function(r){ ri += '<p class="txt">' + esc(r.note) + ' <em style="color:#8a97a3">from ' + esc(r.from) + '</em></p>'; });
+    h += reviewSection("Recognition you received", ri, "#e1f5ee");
+  }
+  if (d.worry){
+    h += reviewSection("The worry you named, and can now let go", '<p class="txt">' + esc(d.worry) + '</p>');
+  }
+  h += '<button class="btn gold" id="recapbtn" onclick="emailRecap()">Email my recap to me</button>';
+  el("body").innerHTML = h;
+}
+
+function emailRecap(){
+  var b = el("recapbtn");
+  b.textContent = "Sending...";
+  api("/spot/review/email", {}).then(function(res){
+    if (res.ok){ b.textContent = "Sent to your inbox"; b.style.background = "#0d9488"; b.style.color = "#fff"; }
+    else { b.textContent = "Could not send, try again"; }
+  }).catch(function(){ b.textContent = "Could not send, try again"; });
+}
+
 // ----- DISC -----
 function startDisc(){
   setTitle("Your DISC Lean");
@@ -2346,6 +2523,14 @@ function drawJeopardy(data){
   byid("stagebody").innerHTML = h;
 }
 
+function drawReviewStage(data){
+  byid("cnt").textContent = "";
+  byid("stagebody").innerHTML =
+    '<div class="recintro"><div class="lab">YOUR RECAP</div>' +
+    '<div class="big">Your three days are on your phone</div>' +
+    '<div class="an">Scroll through everything you did, then tap Email my recap to keep it.</div></div>';
+}
+
 function drawBingo(data){
   var g = data.bingo || {};
   if (g.winner){
@@ -2493,6 +2678,7 @@ function draw(data){
   else if (data.active === "jeopardy"){ drawJeopardy(data); }
   else if (data.active === "who_next"){ drawWhoNext(data); }
   else if (data.active === "bingo"){ drawBingo(data); }
+  else if (data.active === "review"){ drawReviewStage(data); }
   else if (data.active === "pegquiz" || data.active === "taketheturn" || data.active === "namegame"){ drawQuiz(data); }
   else if (data.active === "principledraw"){ drawPrincipleDraw(data); }
   else if (data.active === "clearcloudy"){ drawCloud(data); }
@@ -2636,6 +2822,12 @@ ADMIN_PAGE = """<!DOCTYPE html>
       <thead><tr><th>Name</th><th>In</th><th>DISC</th><th>Lean</th><th>Roll Call</th><th></th></tr></thead>
       <tbody id="rosterbody"></tbody>
     </table>
+  </div>
+
+  <h2>Notes for each person, for the recap</h2>
+  <div class="panel">
+    <div class="drill" style="margin-bottom:10px">Write a short personal note for each person. It shows on their phone in Your Recap at the end of the course. Do this the night before.</div>
+    <div id="notesbody"></div>
   </div>
 
   <h2>Preview</h2>
@@ -2834,6 +3026,28 @@ function drawJeopardyAdmin(d){
 var wnAdminSig = "";
 var pdAdminSig = "";
 var bgAdminSig = "";
+var notesBuilt = false;
+
+function saveNote(pid){
+  var t = byid("note_" + pid).value || "";
+  var btn = byid("noteb_" + pid);
+  if (btn){ btn.textContent = "Saving..."; }
+  post("/note", {pid: pid, note: t}).then(function(){ if (btn){ btn.textContent = "Saved"; } });
+}
+
+function drawNotes(d){
+  if (notesBuilt){ return; }
+  notesBuilt = true;
+  var notes = d.notes || {};
+  var h = "";
+  d.roster.forEach(function(p){
+    var v = notes[p.id] || "";
+    h += '<div style="margin-bottom:12px"><div style="font-size:13px;font-weight:500;margin-bottom:4px">' + esc(p.name) + '</div>' +
+      '<textarea id="note_' + p.id + '" style="width:100%;border:1px solid #d7dde3;border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;min-height:56px;resize:vertical">' + esc(v) + '</textarea>' +
+      '<button class="mini" id="noteb_' + p.id + '" style="margin-top:4px" onclick="saveNote(' + p.id + ')">Save note</button></div>';
+  });
+  byid("notesbody").innerHTML = h;
+}
 
 function pickNext(){ post("/whonext/pick", {}).then(function(){ wnAdminSig = ""; load(); }); }
 function resetWhoNext(){ if (!confirm("Reset the round so everyone is eligible again?")) return; post("/whonext/reset", {}).then(function(){ wnAdminSig = ""; load(); }); }
@@ -2907,6 +3121,7 @@ function load(){
   fetch("/host/" + SECRET + "/admin/data").then(function(r){ return r.json(); }).then(function(d){
     drawSpots(d);
     drawRoster(d);
+    drawNotes(d);
     var js = byid("jsection");
     if (d.active === "jeopardy"){ js.style.display = "block"; drawJeopardyAdmin(d); }
     else { js.style.display = "none"; jAdminSig = ""; }
@@ -3245,6 +3460,32 @@ def bingo_claim():
     return jsonify({"ok": True, "valid": valid, "won": won})
 
 
+@app.route("/spot/review/me")
+def review_me():
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({"ok": False})
+    bundle = review_bundle(pid)
+    if not bundle:
+        return jsonify({"ok": False})
+    out = dict(bundle)
+    out.pop("email", None)
+    out["ok"] = True
+    return jsonify(out)
+
+
+@app.route("/spot/review/email", methods=["POST"])
+def review_email():
+    pid = joined_pid()
+    if pid is None or pid == PREVIEW_PID:
+        return jsonify({"ok": False})
+    bundle = review_bundle(pid)
+    if not bundle:
+        return jsonify({"ok": False})
+    res = send_recap_email(bundle["email"], bundle["name"], bundle)
+    return jsonify({"ok": bool(res.get("ok"))})
+
+
 def send_result_email(to_email, to_name, primary, blend):
     if not SENDGRID_API_KEY:
         return {"ok": False, "status": "skipped"}
@@ -3286,6 +3527,76 @@ def send_result_email(to_email, to_name, primary, blend):
         )
         ok = 200 <= resp.status_code < 300
         return {"ok": ok, "status": resp.status_code}
+    except Exception as e:
+        return {"ok": False, "status": "error", "detail": str(e)}
+
+
+def esc_html(s):
+    s = str(s if s is not None else "")
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def send_recap_email(to_email, to_name, b):
+    if not SENDGRID_API_KEY:
+        return {"ok": False, "status": "skipped"}
+
+    def sec(label, inner, bg="#f4f6f8", lab="#0d9488"):
+        return ('<div style="background:' + bg + ';border-radius:10px;padding:12px 14px;margin-bottom:10px">'
+                '<div style="font-size:12px;font-weight:bold;color:' + lab + '">' + label + '</div>'
+                '<div style="font-size:14px;color:#0f2942;margin-top:3px;line-height:1.5">' + inner + '</div></div>')
+
+    body = ""
+    if b.get("note"):
+        body += sec("A note from your instructor", esc_html(b["note"]), "#faeeda", "#854f0b")
+    if b.get("disc"):
+        d = b["disc"]
+        lean = (d["primary_name"] + " and " + d["blend_name"]) if d.get("blend_name") else d["primary_name"]
+        body += sec("Your DISC lean", "<strong>" + esc_html(lean) + "</strong><br>You lead with "
+                    + esc_html(d["lead"]) + ". Your stretch is " + esc_html(d["stretch"]), "#e1f5ee")
+    if b.get("driver"):
+        body += sec("The driver you chose to grow", esc_html(b["driver"]))
+    if b.get("breakthrough"):
+        bt = b["breakthrough"]
+        body += sec("Your relationship breakthrough", "<strong>" + esc_html(bt["person"]) + "</strong><br>"
+                    + esc_html(bt["breakthrough"]) + "<br>You will: " + esc_html(bt["action"]))
+    if b.get("principle"):
+        body += sec("Your assigned principle", esc_html(b["principle"]))
+    if b.get("quizzes"):
+        qi = "<br>".join(esc_html(q["title"]) + ": " + str(q["score"]) + " of " + str(q["total"]) for q in b["quizzes"])
+        body += sec("Your quiz scores", qi)
+    if b.get("recognition_given"):
+        rg = b["recognition_given"]
+        body += sec("Recognition you gave", "To " + esc_html(rg["to"]) + ": " + esc_html(rg["note"]))
+    if b.get("recognition_received"):
+        ri = "<br>".join(esc_html(r["note"]) + " (from " + esc_html(r["from"]) + ")" for r in b["recognition_received"])
+        body += sec("Recognition you received", ri, "#e1f5ee")
+    if b.get("worry"):
+        body += sec("The worry you named, and can now let go", esc_html(b["worry"]))
+
+    html = (
+        '<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#0f2942">'
+        '<div style="background:#0f2942;padding:20px;border-radius:12px 12px 0 0">'
+        '<div style="color:#ffffff;font-size:18px;font-weight:bold">Your Recap</div>'
+        '<div style="color:#9fe1cb;font-size:13px">Dale Carnegie Course, Reno</div></div>'
+        '<div style="border:1px solid #e6ebef;border-top:none;border-radius:0 0 12px 12px;padding:20px">'
+        '<p style="font-size:15px;margin:0 0 14px">' + esc_html(to_name) + ", here is everything you did across the three days.</p>"
+        + body +
+        '<p style="font-size:12px;color:#5f6b76;border-top:1px solid #e6ebef;padding-top:12px;margin-top:6px">'
+        'Keep applying these. Small steps, every day.</p></div></div>'
+    )
+    payload = {
+        "personalizations": [{"to": [{"email": to_email, "name": to_name}]}],
+        "from": {"email": FROM_EMAIL, "name": FROM_NAME},
+        "subject": "Your recap from the Dale Carnegie Course",
+        "content": [{"type": "text/html", "value": html}],
+    }
+    try:
+        resp = requests.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers={"Authorization": "Bearer " + SENDGRID_API_KEY, "Content-Type": "application/json"},
+            json=payload, timeout=15,
+        )
+        return {"ok": 200 <= resp.status_code < 300, "status": resp.status_code}
     except Exception as e:
         return {"ok": False, "status": "error", "detail": str(e)}
 
@@ -3474,6 +3785,7 @@ def admin_data(secret):
         "whonext": whonext_public(),
         "principledraw": principledraw_public(),
         "bingo": bingo_host_public(),
+        "notes": notes_map(),
     })
 
 
@@ -3735,6 +4047,19 @@ def bingo_new_route(secret):
     if secret != HOST_SECRET:
         return jsonify({"ok": False}), 404
     bingo_new_game()
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/note", methods=["POST"])
+def host_note(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    pid = data.get("pid")
+    if pid not in ROSTER_IDS:
+        return jsonify({"ok": False})
+    note = (data.get("note") or "").strip()
+    set_note(pid, note[:600])
     return jsonify({"ok": True})
 
 
