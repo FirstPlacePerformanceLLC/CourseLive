@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import random
 import requests
 import psycopg
 from flask import Flask, request, session, jsonify, Response
@@ -41,12 +42,12 @@ ROSTER_IDS = [r[0] for r in ROSTER]
 # ---------------------------------------------------------------------------
 SPOTS = [
     {"key": "welcome", "day": 0, "title": "Welcome", "anchor": "Greet the room as students join", "live": True},
-    {"key": "who_next", "day": 0, "title": "Who's Next", "anchor": "Random name picker, all three days", "live": False},
+    {"key": "who_next", "day": 0, "title": "Who's Next", "anchor": "Random name picker, all three days", "live": True},
     {"key": "bingo", "day": 0, "title": "Principle Bingo", "anchor": "All 30 Human Relations Principles", "live": False},
     {"key": "rollcall", "day": 1, "title": "Roll Call", "anchor": "1A Build a Foundation, Five Drivers of Success", "live": True},
     {"key": "namegame", "day": 1, "title": "Name Game", "anchor": "1B Recall and Use Names, Pause Part Punch", "live": False},
     {"key": "pegquiz", "day": 1, "title": "Peg Quiz", "anchor": "1C Peg Words 1 to 9", "live": False},
-    {"key": "breakthrough", "day": 1, "title": "Breakthrough Board", "anchor": "1C Commit to Enhance Relationships", "live": False},
+    {"key": "breakthrough", "day": 1, "title": "Breakthrough Board", "anchor": "1C Commit to Enhance Relationships", "live": True},
     {"key": "principledraw", "day": 2, "title": "Principle Draw", "anchor": "Day 2 principle assignments", "live": False},
     {"key": "clearcloudy", "day": 2, "title": "Clear or Cloudy", "anchor": "2B Make Our Ideas Clear, Magic Formula", "live": False},
     {"key": "energizer", "day": 2, "title": "Energizer", "anchor": "2C Energize Our Communications", "live": False},
@@ -345,6 +346,22 @@ def init_db():
                     team INTEGER NOT NULL,
                     PRIMARY KEY (cid, team)
                 )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS whonext_done (
+                    pid INTEGER PRIMARY KEY,
+                    picked_at TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS whonext_state (
+                    id INTEGER PRIMARY KEY,
+                    current_pid INTEGER
+                )
+            """)
+            cur.execute("""
+                INSERT INTO whonext_state (id, current_pid) VALUES (1, NULL)
+                ON CONFLICT (id) DO NOTHING
             """)
             cur.execute("""
                 INSERT INTO jeopardy_state (id, phase) VALUES (1, 'board')
@@ -720,6 +737,106 @@ def jeopardy_board(for_host):
     return block
 
 
+# ---------------------------------------------------------------------------
+# Who's Next helpers. Fair pick, no repeat until everyone has had a turn.
+# ---------------------------------------------------------------------------
+def whonext_joined_ids():
+    ids = []
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pid FROM participants WHERE pid <> %s", (PREVIEW_PID,))
+            joined = set(p for (p,) in cur.fetchall())
+    for rid in ROSTER_IDS:
+        if rid in joined:
+            ids.append(rid)
+    return ids
+
+
+def whonext_done_ids():
+    out = set()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pid FROM whonext_done")
+            for (p,) in cur.fetchall():
+                out.add(p)
+    return out
+
+
+def whonext_current():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT current_pid FROM whonext_state WHERE id = 1")
+            row = cur.fetchone()
+            return row[0] if row and row[0] is not None else None
+
+
+def whonext_clear_done():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM whonext_done")
+        conn.commit()
+
+
+def whonext_reset():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM whonext_done")
+            cur.execute("UPDATE whonext_state SET current_pid = NULL WHERE id = 1")
+        conn.commit()
+
+
+def whonext_pick():
+    joined = whonext_joined_ids()
+    if not joined:
+        return None
+    done = whonext_done_ids()
+    eligible = [p for p in joined if p not in done]
+    if not eligible:
+        whonext_clear_done()
+        eligible = joined[:]
+    pid = random.choice(eligible)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO whonext_done (pid) VALUES (%s) ON CONFLICT (pid) DO NOTHING", (pid,))
+            cur.execute("UPDATE whonext_state SET current_pid = %s WHERE id = 1", (pid,))
+        conn.commit()
+    return pid
+
+
+def whonext_public():
+    joined = whonext_joined_ids()
+    done = whonext_done_ids()
+    cur = whonext_current()
+    remaining = len([p for p in joined if p not in done])
+    name = None
+    if cur is not None:
+        for rid, first, last, company, email in ROSTER:
+            if rid == cur:
+                name = first + " " + last
+                break
+    return {
+        "current_pid": cur,
+        "current_name": name,
+        "remaining": remaining,
+        "total": len(joined),
+        "done": sorted(done),
+    }
+
+
+def breakthrough_list():
+    out = []
+    for rid, first, last, company, email in ROSTER:
+        r = get_response(rid, "breakthrough")
+        if r and (r.get("action") or "").strip():
+            out.append({
+                "name": first + " " + last,
+                "person": r.get("person", ""),
+                "breakthrough": r.get("breakthrough", ""),
+                "action": r.get("action", ""),
+            })
+    return out
+
+
 PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -796,6 +913,8 @@ var qi = 0;
 var recPeer = null;
 var jTimer = null;
 var jMounted = false;
+var wnTimer = null;
+var wnLastSig = "";
 
 function esc(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 function el(id){ return document.getElementById(id); }
@@ -851,8 +970,9 @@ function tick(){
   if (!joined){ return; }
   fetch("/state").then(function(r){ return r.json(); }).then(function(st){
     var changed = st.active !== renderedKey;
-    if (st.active === "recognition" && st.status !== lastRecStatus){ changed = true; }
-    if (st.active === "recognition"){ lastRecStatus = st.status; }
+    var revealKey = (st.active === "recognition" || st.active === "breakthrough");
+    if (revealKey && st.status !== lastRecStatus){ changed = true; }
+    if (revealKey){ lastRecStatus = st.status; }
     if (changed){
       renderedKey = st.active;
       renderSpot(st.active, st.status);
@@ -862,10 +982,16 @@ function tick(){
 
 function renderSpot(key, status){
   if (jTimer && key !== "jeopardy"){ clearInterval(jTimer); jTimer = null; jMounted = false; }
+  if (wnTimer && key !== "who_next"){ clearInterval(wnTimer); wnTimer = null; }
   if (key === "welcome"){ renderJoined(); return; }
   if (key === "disc"){ startDisc(); return; }
   if (key === "rollcall"){ startRollcall(); return; }
   if (key === "jeopardy"){ startJeopardy(); return; }
+  if (key === "who_next"){ startWhoNext(); return; }
+  if (key === "breakthrough"){
+    if (status === "locked"){ breakthroughUp(); } else { startBreakthrough(); }
+    return;
+  }
   if (key === "recognition"){
     if (status === "locked"){ recWallUp(); } else { startRecognition(); }
     return;
@@ -1061,6 +1187,92 @@ function buzz(){
     .catch(function(){ jLastSig = ""; jPoll(); });
 }
 
+// ----- Who's Next, the picker -----
+function startWhoNext(){
+  setTitle("Who's Next");
+  setBar(0);
+  el("sub").textContent = "Watch the screen";
+  el("body").innerHTML = '<div id="wnbody"></div>';
+  wnLastSig = "";
+  wnPoll();
+  if (wnTimer){ clearInterval(wnTimer); }
+  wnTimer = setInterval(wnPoll, 1200);
+}
+
+function wnPoll(){
+  fetch("/spot/whonext/me").then(function(r){ return r.json(); }).then(function(d){
+    if (!d || d.ok === false){ return; }
+    drawWhoNextMe(d);
+  }).catch(function(){});
+}
+
+function drawWhoNextMe(d){
+  var b = el("wnbody");
+  if (!b){ return; }
+  var sig = (d.you ? "Y" : "N") + "|" + (d.current_pid || 0);
+  if (sig === wnLastSig){ return; }
+  wnLastSig = sig;
+  if (d.you){
+    setBar(100);
+    b.innerHTML = '<div class="hold"><span class="tag">YOUR TURN</span>' +
+      '<p class="big">You are up</p>' +
+      '<p class="small">Stand and take the floor. The room is with you.</p></div>';
+  } else if (d.current_name){
+    b.innerHTML = '<div class="hold"><span class="tag">WHO IS NEXT</span>' +
+      '<p class="big">' + esc(d.current_name) + '</p>' +
+      '<p class="small">All eyes up front. You could be next.</p></div>';
+  } else {
+    b.innerHTML = '<div class="hold"><span class="tag">WHO IS NEXT</span>' +
+      '<p class="big">Get ready</p>' +
+      '<p class="small">Your host is about to pick someone. It could be you.</p></div>';
+  }
+}
+
+// ----- Breakthrough Board, commit to enhance relationships -----
+function startBreakthrough(){
+  setTitle("Breakthrough");
+  setBar(0);
+  el("sub").textContent = "Your commitment";
+  fetch("/spot/breakthrough/mine").then(function(r){ return r.json(); }).then(function(mine){
+    if (mine && mine.action){ breakthroughSent(); return; }
+    el("body").innerHTML =
+      '<p class="stem">Commit to one relationship breakthrough. Keep it specific.</p>' +
+      '<textarea class="note" id="bwho" placeholder="Person at work I want a stronger relationship with"></textarea>' +
+      '<textarea class="note" id="bwhat" placeholder="The breakthrough I want"></textarea>' +
+      '<textarea class="note" id="baction" placeholder="What I will do differently, starting now"></textarea>' +
+      '<button class="btn" onclick="sendBreakthrough()">Commit it</button>';
+  });
+}
+
+function sendBreakthrough(){
+  var person = (el("bwho").value || "").trim();
+  var what = (el("bwhat").value || "").trim();
+  var action = (el("baction").value || "").trim();
+  if (!person || !what || !action){ el("sub").textContent = "Fill in all three"; return; }
+  api("/spot/breakthrough/submit", {person: person, breakthrough: what, action: action}).then(function(res){
+    if (res.ok){ breakthroughSent(); }
+    else if (res.locked){ el("sub").textContent = "The board is closed now"; }
+  });
+}
+
+function breakthroughSent(){
+  setBar(100);
+  el("sub").textContent = "Committed";
+  el("body").innerHTML =
+    '<div class="hold"><span class="tag">COMMITTED</span>' +
+    '<p class="big">Your commitment is in.</p>' +
+    '<p class="small">We will put the board on the screen. Watch the main display.</p></div>';
+}
+
+function breakthroughUp(){
+  setBar(100);
+  el("sub").textContent = "On the screen";
+  el("body").innerHTML =
+    '<div class="hold"><span class="tag">BREAKTHROUGH BOARD</span>' +
+    '<p class="big">Look up at the screen.</p>' +
+    '<p class="small">The commitments the room made are on the main display.</p></div>';
+}
+
 // ----- DISC -----
 function startDisc(){
   setTitle("Your DISC Lean");
@@ -1191,6 +1403,11 @@ HOST_PAGE = """<!DOCTYPE html>
   .rnote .rfrom { display: block; font-size: 11px; color: #8a97a3; margin-top: 3px; }
   .nextup .big { font-size: 30px; font-weight: 600; margin: 10px 0 6px; }
   .nextup .an { font-size: 14px; color: #5f6b76; }
+  .wnstage { padding: 46px 24px; text-align: center; }
+  .wnstage .lab { font-size: 13px; font-weight: 600; letter-spacing: 2px; color: #0d6e63; text-transform: uppercase; }
+  .wnstage .name { font-size: 46px; font-weight: 700; color: #0f2942; margin: 14px 0 8px; line-height: 1.1; }
+  .wnstage .rem { font-size: 14px; color: #5f6b76; }
+  .wnstage .waiting { font-size: 30px; font-weight: 600; color: #5f6b76; margin: 14px 0; }
   .jboard { padding: 14px 16px 18px; background: #0f2942; }
   .jhead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
   .jgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
@@ -1420,6 +1637,42 @@ function drawJeopardy(data){
   byid("stagebody").innerHTML = h;
 }
 
+function drawWhoNext(data){
+  var w = data.whonext || {};
+  byid("cnt").textContent = w.total ? (w.remaining + " of " + w.total + " left this round") : "";
+  var h = '<div class="wnstage"><div class="lab">Who is next</div>';
+  if (w.current_name){
+    h += '<div class="name">' + esc(w.current_name) + '</div><div class="rem">Take the floor</div>';
+  } else {
+    h += '<div class="waiting">Ready when you are</div><div class="rem">Pick someone from the console</div>';
+  }
+  h += '</div>';
+  byid("stagebody").innerHTML = h;
+}
+
+function drawBreakthrough(data){
+  if (data.status !== "locked"){
+    var n = (data.breakthrough || []).length;
+    byid("cnt").textContent = n + " of 7 committed";
+    byid("stagebody").innerHTML =
+      '<div class="recintro"><div class="lab">BREAKTHROUGH BOARD</div>' +
+      '<div class="big">Commitments are coming in</div>' +
+      '<div class="an">When the room is ready, lock input on your phone to reveal the board.</div></div>';
+    return;
+  }
+  byid("cnt").textContent = (data.breakthrough || []).length + " commitments";
+  var h = '<div class="wall">';
+  (data.breakthrough || []).forEach(function(r){
+    h += '<div class="rcard"><div class="rto">' + esc(r.name) + '</div>' +
+      '<p class="rnote"><strong>' + esc(r.person) + '</strong></p>' +
+      '<p class="rnote">' + esc(r.breakthrough) + '</p>' +
+      '<p class="rnote">' + esc(r.action) + '<span class="rfrom">what I will do differently</span></p>' +
+      '</div>';
+  });
+  h += '</div>';
+  byid("stagebody").innerHTML = h;
+}
+
 function draw(data){
   byid("stitle").textContent = data.title;
   if (data.active !== "welcome"){ welcomeMounted = false; }
@@ -1427,6 +1680,8 @@ function draw(data){
   else if (data.active === "disc"){ drawPlot(data); }
   else if (data.active === "rollcall"){ drawTally(data); }
   else if (data.active === "jeopardy"){ drawJeopardy(data); }
+  else if (data.active === "who_next"){ drawWhoNext(data); }
+  else if (data.active === "breakthrough"){ drawBreakthrough(data); }
   else if (data.active === "recognition"){ drawRecognition(data); }
   else { drawNext(data); }
 }
@@ -1535,6 +1790,13 @@ ADMIN_PAGE = """<!DOCTYPE html>
     </div>
   </div>
 
+  <div id="wnsection" style="display:none">
+    <h2>Who's Next</h2>
+    <div class="panel">
+      <div id="wnadmin"></div>
+    </div>
+  </div>
+
   <h2>The room</h2>
   <div class="panel">
     <table>
@@ -1595,12 +1857,18 @@ function drawSpots(d){
   if (st && st.key === "jeopardy"){
     sl = 'Quizo runs from the panel below. ' +
       '<button class="toggle" onclick="clearSpot(\\'jeopardy\\')">Reset Quizo</button>';
+  } else if (st && st.key === "who_next"){
+    sl = 'Who is Next runs from the panel below. ' +
+      '<button class="toggle" onclick="clearSpot(\\'who_next\\')">Reset round</button>';
   } else if (st){
-    var isRec = st.key === "recognition";
-    var openLbl = isRec ? "Hide the wall" : "Lock input";
-    var lockLbl = isRec ? "Reveal the wall" : "Open input";
-    var stateLbl = isRec
-      ? (st.status === "open" ? "collecting notes" : "wall is showing")
+    var isReveal = (st.key === "recognition" || st.key === "breakthrough");
+    var noun = st.key === "breakthrough" ? "the board" : "the wall";
+    var openLbl = isReveal ? ("Reveal " + noun) : "Lock input";
+    var lockLbl = isReveal ? ("Hide " + noun) : "Open input";
+    var collecting = st.key === "breakthrough" ? "collecting commitments" : "collecting notes";
+    var showing = st.key === "breakthrough" ? "board is showing" : "wall is showing";
+    var stateLbl = isReveal
+      ? (st.status === "open" ? collecting : showing)
       : (st.status === "open" ? "open" : "closed");
     sl = 'Status, <strong>' + stateLbl + '</strong> for ' + esc(d.active_title) + '. ' +
       '<button class="toggle" onclick="toggleStatus(\\'' + st.key + '\\',\\'' + st.status + '\\')">' +
@@ -1718,6 +1986,37 @@ function drawJeopardyAdmin(d){
   byid("jadmin").innerHTML = h;
 }
 
+var wnAdminSig = "";
+
+function pickNext(){ post("/whonext/pick", {}).then(function(){ wnAdminSig = ""; load(); }); }
+function resetWhoNext(){ if (!confirm("Reset the round so everyone is eligible again?")) return; post("/whonext/reset", {}).then(function(){ wnAdminSig = ""; load(); }); }
+
+function drawWhoNextAdmin(d){
+  var w = d.whonext || {};
+  var sig = JSON.stringify(w);
+  if (sig === wnAdminSig){ return; }
+  wnAdminSig = sig;
+  var doneNames = {};
+  d.roster.forEach(function(p){ doneNames[p.id] = p.name; });
+  var h = '';
+  if (w.current_name){
+    h += '<div style="text-align:center;margin-bottom:10px"><div style="font-size:12px;color:#5f6b76">On the floor now</div>' +
+      '<div style="font-size:22px;font-weight:700">' + esc(w.current_name) + '</div></div>';
+  } else {
+    h += '<div style="text-align:center;margin-bottom:10px;color:#5f6b76">No one picked yet</div>';
+  }
+  h += '<button class="btn-wn" onclick="pickNext()" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:600;font-family:inherit;cursor:pointer">Pick next person</button>';
+  h += '<div style="font-size:12px;color:#5f6b76;margin:10px 0 4px">' + (w.remaining || 0) + ' of ' + (w.total || 0) + ' left this round. Picks do not repeat until everyone has had a turn.</div>';
+  var done = w.done || [];
+  if (done.length){
+    h += '<div style="font-size:12px;color:#5f6b76;margin-bottom:6px">Already up: ';
+    h += done.map(function(pid){ return esc(doneNames[pid] || ("id " + pid)); }).join(", ");
+    h += '</div>';
+  }
+  h += '<button class="mini" onclick="resetWhoNext()">Reset round</button>';
+  byid("wnadmin").innerHTML = h;
+}
+
 function load(){
   fetch("/host/" + SECRET + "/admin/data").then(function(r){ return r.json(); }).then(function(d){
     drawSpots(d);
@@ -1725,6 +2024,9 @@ function load(){
     var js = byid("jsection");
     if (d.active === "jeopardy"){ js.style.display = "block"; drawJeopardyAdmin(d); }
     else { js.style.display = "none"; jAdminSig = ""; }
+    var wns = byid("wnsection");
+    if (d.active === "who_next"){ wns.style.display = "block"; drawWhoNextAdmin(d); }
+    else { wns.style.display = "none"; wnAdminSig = ""; }
   }).catch(function(){});
 }
 
@@ -1857,6 +2159,18 @@ def spot_submit(key):
             return jsonify({"ok": False})
         save_response(pid, "recognition", {"to": to, "note": note[:240]})
         return jsonify({"ok": True})
+    if key == "breakthrough":
+        person = (data.get("person") or "").strip()
+        breakthrough = (data.get("breakthrough") or "").strip()
+        action = (data.get("action") or "").strip()
+        if not person or not breakthrough or not action:
+            return jsonify({"ok": False})
+        save_response(pid, "breakthrough", {
+            "person": person[:160],
+            "breakthrough": breakthrough[:240],
+            "action": action[:240],
+        })
+        return jsonify({"ok": True})
     return jsonify({"ok": False})
 
 
@@ -1928,6 +2242,26 @@ def jeopardy_buzz():
         return jsonify({"ok": True, "won": False, "locked": True})
     won = jeopardy_try_buzz(team)
     return jsonify({"ok": True, "won": won})
+
+
+@app.route("/spot/whonext/me")
+def whonext_me():
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({"ok": False})
+    cur = whonext_current()
+    name = None
+    if cur is not None:
+        for rid, first, last, company, email in ROSTER:
+            if rid == cur:
+                name = first + " " + last
+                break
+    return jsonify({
+        "ok": True,
+        "current_pid": cur,
+        "current_name": name,
+        "you": (cur is not None and cur == pid),
+    })
 
 
 def send_result_email(to_email, to_name, primary, blend):
@@ -2052,6 +2386,10 @@ def host_data(secret):
     }
     if active == "jeopardy":
         payload["jeopardy"] = jeopardy_board(for_host=False)
+    if active == "who_next":
+        payload["whonext"] = whonext_public()
+    if active == "breakthrough":
+        payload["breakthrough"] = breakthrough_list()
     return jsonify(payload)
 
 
@@ -2073,6 +2411,8 @@ def host_clear(secret):
                     revealed = FALSE, winner_shown = FALSE
                 WHERE id = 1
             """)
+            cur.execute("DELETE FROM whonext_done")
+            cur.execute("UPDATE whonext_state SET current_pid = NULL WHERE id = 1")
         conn.commit()
     return jsonify({"ok": True})
 
@@ -2130,6 +2470,7 @@ def admin_data(secret):
         "roster": roster_out,
         "jeopardy": jeopardy_board(for_host=True),
         "jmembers": jeopardy_members_map(),
+        "whonext": whonext_public(),
     })
 
 
@@ -2188,6 +2529,9 @@ def host_clear_spot(secret):
         return jsonify({"ok": False})
     if key == "jeopardy":
         jeopardy_reset(keep_members=True)
+        return jsonify({"ok": True})
+    if key == "who_next":
+        whonext_reset()
         return jsonify({"ok": True})
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -2327,6 +2671,25 @@ def jeopardy_reset_route(secret):
     if secret != HOST_SECRET:
         return jsonify({"ok": False}), 404
     jeopardy_reset(keep_members=True)
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Who's Next host controls
+# ---------------------------------------------------------------------------
+@app.route("/host/<secret>/whonext/pick", methods=["POST"])
+def whonext_pick_route(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    pid = whonext_pick()
+    return jsonify({"ok": pid is not None, "pid": pid})
+
+
+@app.route("/host/<secret>/whonext/reset", methods=["POST"])
+def whonext_reset_route(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    whonext_reset()
     return jsonify({"ok": True})
 
 
