@@ -2320,8 +2320,13 @@ HOST_PAGE = """<!DOCTYPE html>
   .welcome .big { font-size: 40px; font-weight: 600; margin: 14px 0 6px; line-height: 1.15; }
   .welcome .dt { font-size: 15px; color: #b9c6d4; margin-bottom: 4px; }
   .welcome .cue { font-size: 14px; color: #7fd8c0; margin-top: 14px; }
-  .holdcard { text-align: center; padding: 96px 30px; }
-  .holdlogo { height: 92px; width: auto; opacity: 0.96; }
+  .holdhero { background: #0f2942; padding: 74px 44px; text-align: center; display: flex; align-items: center; justify-content: center; min-height: 320px; }
+  .hhwrap { max-width: 860px; }
+  .hheyebrow { font-size: 14px; font-weight: 600; letter-spacing: 3px; color: #d4a017; text-transform: uppercase; margin-bottom: 26px; }
+  .hhquote { font-size: 34px; line-height: 1.32; font-weight: 600; color: #fff; transition: opacity 0.6s ease; min-height: 90px; }
+  .hhrule { width: 64px; height: 3px; background: #d4a017; border-radius: 2px; margin: 30px auto 0; }
+  .hhfoot { font-size: 14px; letter-spacing: 1px; color: #9fb3c8; margin-top: 22px; }
+  .hhdot { display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: #d4a017; margin: 0 12px; vertical-align: middle; }
   .chiprow { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 26px; min-height: 40px; }
   .chip { background: rgba(255,255,255,0.08); border: 1px solid rgba(159,225,203,0.35); color: #fff; border-radius: 999px; padding: 9px 18px; font-size: 16px; font-weight: 500; animation: pop 0.55s cubic-bezier(0.2,0.8,0.3,1.2) both; }
   .chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #0d9488; margin-right: 8px; vertical-align: middle; }
@@ -2495,10 +2500,54 @@ function mountWelcome(){
   welcomeShown = {};
 }
 
+var HOLD_LINES = [
+  "Become genuinely interested in other people.",
+  "Smile.",
+  "Remember that a person's name is, to them, the sweetest sound in any language.",
+  "Be a good listener. Encourage others to talk about themselves.",
+  "Talk in terms of the other person's interests.",
+  "Make the other person feel important, and do it sincerely.",
+  "You can make more friends in two months by becoming interested in others than in two years trying to get others interested in you.",
+  "Act enthusiastic and you will be enthusiastic.",
+  "Most great things are done by people who kept trying when there seemed to be no hope at all.",
+  "Discouragement and failure are two of the surest stepping stones to success."
+];
+var holdMounted = false;
+var holdTimer = null;
+var holdIdx = 0;
+
+function mountHolding(){
+  byid("stagebody").innerHTML =
+    '<div class="holdhero"><div class="hhwrap">' +
+    '<div class="hheyebrow">The Dale Carnegie Course</div>' +
+    '<div class="hhquote" id="hhquote"></div>' +
+    '<div class="hhrule"></div>' +
+    '<div class="hhfoot">Reno, Nevada<span class="hhdot"></span>July 14 to 16, 2026</div>' +
+    '</div></div>';
+  holdMounted = true;
+  holdIdx = 0;
+  var q = byid("hhquote");
+  q.textContent = HOLD_LINES[0];
+  q.style.opacity = 1;
+  if (holdTimer){ clearInterval(holdTimer); }
+  holdTimer = setInterval(rotateHold, 8000);
+}
+
+function rotateHold(){
+  var q = byid("hhquote");
+  if (!q){ return; }
+  q.style.opacity = 0;
+  setTimeout(function(){
+    holdIdx = (holdIdx + 1) % HOLD_LINES.length;
+    q.textContent = HOLD_LINES[holdIdx];
+    q.style.opacity = 1;
+  }, 600);
+}
+
 function drawHolding(data){
   byid("cnt").textContent = "";
-  byid("stagebody").innerHTML =
-    '<div class="holdcard"><img src="/brand/logo.png" alt="Dale Carnegie Nevada" class="holdlogo"></div>';
+  if (holdMounted){ return; }
+  mountHolding();
 }
 
 function drawWelcome(data){
@@ -2773,6 +2822,7 @@ function drawBreakthrough(data){
 function draw(data){
   byid("stitle").textContent = (data.active === "holding") ? "" : data.title;
   if (data.active !== "welcome"){ welcomeMounted = false; }
+  if (data.active !== "holding"){ holdMounted = false; if (holdTimer){ clearInterval(holdTimer); holdTimer = null; } }
   if (data.active === "holding"){ drawHolding(data); }
   else if (data.active === "welcome"){ drawWelcome(data); }
   else if (data.active === "disc"){ drawPlot(data); }
