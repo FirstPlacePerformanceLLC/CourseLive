@@ -559,6 +559,7 @@ def init_db():
                 INSERT INTO whonext_state (id, current_pid) VALUES (1, NULL)
                 ON CONFLICT (id) DO NOTHING
             """)
+            cur.execute("ALTER TABLE whonext_state ADD COLUMN IF NOT EXISTS pick_seq INTEGER NOT NULL DEFAULT 0")
             cur.execute("""
                 INSERT INTO jeopardy_state (id, phase) VALUES (1, 'board')
                 ON CONFLICT (id) DO NOTHING
@@ -982,40 +983,52 @@ def whonext_reset():
 
 
 def whonext_pick():
-    joined = whonext_joined_ids()
-    if not joined:
+    pool = list(ROSTER_IDS)
+    if not pool:
         return None
+    cur_pid = whonext_current()
     done = whonext_done_ids()
-    eligible = [p for p in joined if p not in done]
+    eligible = [p for p in pool if p not in done]
     if not eligible:
         whonext_clear_done()
-        eligible = joined[:]
+        eligible = [p for p in pool if p != cur_pid] or pool[:]
     pid = random.choice(eligible)
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("INSERT INTO whonext_done (pid) VALUES (%s) ON CONFLICT (pid) DO NOTHING", (pid,))
-            cur.execute("UPDATE whonext_state SET current_pid = %s WHERE id = 1", (pid,))
+            cur.execute("UPDATE whonext_state SET current_pid = %s, pick_seq = pick_seq + 1 WHERE id = 1", (pid,))
         conn.commit()
     return pid
 
 
+def whonext_seq():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pick_seq FROM whonext_state WHERE id = 1")
+            row = cur.fetchone()
+            return row[0] if row and row[0] is not None else 0
+
+
 def whonext_public():
-    joined = whonext_joined_ids()
+    pool = list(ROSTER_IDS)
     done = whonext_done_ids()
     cur = whonext_current()
-    remaining = len([p for p in joined if p not in done])
+    remaining = len([p for p in pool if p not in done])
     name = None
     if cur is not None:
         for rid, first, last, company, email in ROSTER:
             if rid == cur:
                 name = first + " " + last
                 break
+    names = [{"id": rid, "first": first} for rid, first, last, company, email in ROSTER]
     return {
         "current_pid": cur,
         "current_name": name,
         "remaining": remaining,
-        "total": len(joined),
+        "total": len(pool),
         "done": sorted(done),
+        "seq": whonext_seq(),
+        "names": names,
     }
 
 
@@ -2379,6 +2392,10 @@ HOST_PAGE = """<!DOCTYPE html>
   .wnstage .name { font-size: 46px; font-weight: 700; color: #0f2942; margin: 14px 0 8px; line-height: 1.1; }
   .wnstage .rem { font-size: 14px; color: #5f6b76; }
   .wnstage .waiting { font-size: 30px; font-weight: 600; color: #5f6b76; margin: 14px 0; }
+  .wnname { font-size: 54px; font-weight: 700; color: #0f2942; margin: 20px 0 10px; line-height: 1.06; min-height: 62px; }
+  .wnname.pop { color: #0d9488; animation: wnpop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1); }
+  .wnsub { font-size: 15px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #d4a017; min-height: 20px; }
+  @keyframes wnpop { 0% { transform: scale(0.7); opacity: 0.35; } 60% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
   .jboard { padding: 14px 16px 18px; background: #0f2942; }
   .jhead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
   .jgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
@@ -2515,6 +2532,10 @@ var HOLD_LINES = [
 var holdMounted = false;
 var holdTimer = null;
 var holdIdx = 0;
+var wnMounted = false;
+var wnSeq = -1;
+var wnAnimating = false;
+var wnReelTimer = null;
 
 function mountHolding(){
   byid("stagebody").innerHTML =
@@ -2783,17 +2804,90 @@ function drawWorry(data){
   byid("stagebody").innerHTML = h;
 }
 
+function mountWnStage(){
+  byid("stagebody").innerHTML =
+    '<div class="wnstage">' +
+    '<div class="lab">Who is next</div>' +
+    '<div class="wnname" id="wnname"></div>' +
+    '<div class="wnsub" id="wnsub"></div>' +
+    '</div>';
+}
+
+function showWnIdle(){
+  var nm = byid("wnname");
+  if (nm){ nm.classList.remove("pop"); nm.textContent = "Ready when you are"; }
+  var sb = byid("wnsub");
+  if (sb){ sb.textContent = ""; }
+}
+
+function showWnWinner(name){
+  var nm = byid("wnname");
+  if (nm){ nm.classList.remove("pop"); nm.textContent = name; }
+  var sb = byid("wnsub");
+  if (sb){ sb.textContent = "Take the floor"; }
+}
+
+function shuffleArr(a){
+  var arr = a.slice();
+  for (var i = arr.length - 1; i > 0; i--){
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+  }
+  return arr;
+}
+
+function runWnReel(w){
+  wnAnimating = true;
+  var reel = shuffleArr((w.names || []).map(function(n){ return n.first; }));
+  if (!reel.length){ reel = [w.current_name]; }
+  var winner = w.current_name;
+  var nm = byid("wnname");
+  var sb = byid("wnsub");
+  if (sb){ sb.textContent = ""; }
+  if (nm){ nm.classList.remove("pop"); }
+  var i = 0;
+  var delay = 55;
+  var elapsed = 0;
+  function tick(){
+    if (nm){ nm.textContent = reel[i % reel.length]; }
+    i++;
+    elapsed += delay;
+    if (elapsed > 1500){ delay += 36; }
+    if (delay < 330){
+      wnReelTimer = setTimeout(tick, delay);
+    } else {
+      wnReelTimer = null;
+      if (nm){
+        nm.textContent = winner;
+        void nm.offsetWidth;
+        nm.classList.add("pop");
+      }
+      if (sb){ sb.textContent = "Take the floor"; }
+      wnAnimating = false;
+    }
+  }
+  tick();
+}
+
 function drawWhoNext(data){
   var w = data.whonext || {};
   byid("cnt").textContent = w.total ? (w.remaining + " of " + w.total + " left this round") : "";
-  var h = '<div class="wnstage"><div class="lab">Who is next</div>';
-  if (w.current_name){
-    h += '<div class="name">' + esc(w.current_name) + '</div><div class="rem">Take the floor</div>';
-  } else {
-    h += '<div class="waiting">Ready when you are</div><div class="rem">Pick someone from the console</div>';
+  if (!wnMounted){
+    mountWnStage();
+    wnMounted = true;
+    wnSeq = (typeof w.seq === "number") ? w.seq : 0;
+    if (w.current_name){ showWnWinner(w.current_name); } else { showWnIdle(); }
+    return;
   }
-  h += '</div>';
-  byid("stagebody").innerHTML = h;
+  if (wnAnimating){ return; }
+  var seq = (typeof w.seq === "number") ? w.seq : 0;
+  if (w.current_name && seq !== wnSeq){
+    wnSeq = seq;
+    runWnReel(w);
+    return;
+  }
+  wnSeq = seq;
+  if (w.current_name){ showWnWinner(w.current_name); } else { showWnIdle(); }
 }
 
 function drawBreakthrough(data){
@@ -2823,6 +2917,7 @@ function draw(data){
   byid("stitle").textContent = (data.active === "holding") ? "" : data.title;
   if (data.active !== "welcome"){ welcomeMounted = false; }
   if (data.active !== "holding"){ holdMounted = false; if (holdTimer){ clearInterval(holdTimer); holdTimer = null; } }
+  if (data.active !== "who_next"){ wnMounted = false; wnAnimating = false; if (wnReelTimer){ clearTimeout(wnReelTimer); wnReelTimer = null; } }
   if (data.active === "holding"){ drawHolding(data); }
   else if (data.active === "welcome"){ drawWelcome(data); }
   else if (data.active === "disc"){ drawPlot(data); }
@@ -3249,8 +3344,8 @@ function drawWhoNextAdmin(d){
   } else {
     h += '<div style="text-align:center;margin-bottom:10px;color:#5f6b76">No one picked yet</div>';
   }
-  h += '<button class="btn-wn" onclick="pickNext()" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:600;font-family:inherit;cursor:pointer">Pick next person</button>';
-  h += '<div style="font-size:12px;color:#5f6b76;margin:10px 0 4px">' + (w.remaining || 0) + ' of ' + (w.total || 0) + ' left this round. Picks do not repeat until everyone has had a turn.</div>';
+  h += '<button class="btn-wn" onclick="pickNext()" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:600;font-family:inherit;cursor:pointer">Generate</button>';
+  h += '<div style="font-size:12px;color:#5f6b76;margin:10px 0 4px">' + (w.remaining || 0) + ' of ' + (w.total || 0) + ' left this round. The room screen runs the draw. Names do not repeat until all seven have had a turn.</div>';
   var done = w.done || [];
   if (done.length){
     h += '<div style="font-size:12px;color:#5f6b76;margin-bottom:6px">Already up: ';
