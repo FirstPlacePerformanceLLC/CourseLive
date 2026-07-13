@@ -50,7 +50,7 @@ SPOTS = [
     {"key": "breakthrough", "day": 1, "title": "Breakthrough Board", "anchor": "1C Commit to Enhance Relationships", "live": True},
     {"key": "principledraw", "day": 2, "title": "Principle Draw", "anchor": "Day 2 principle assignments", "live": True},
     {"key": "clearcloudy", "day": 2, "title": "Clear or Cloudy", "anchor": "2B Make Our Ideas Clear, Magic Formula", "live": True},
-    {"key": "energizer", "day": 2, "title": "Energizer", "anchor": "2C Energize Our Communications", "live": False},
+    {"key": "energizer", "day": 2, "title": "Energizer", "anchor": "2C Energize Our Communications", "live": True},
     {"key": "worryvault", "day": 2, "title": "Worry Vault", "anchor": "2D Put Stress in Perspective", "live": True},
     {"key": "jeopardy", "day": 3, "title": "Quizo", "anchor": "Day Three review, all principle families plus Magic Formula, LIONS, and Worry", "live": True},
     {"key": "taketheturn", "day": 3, "title": "Take the Turn", "anchor": "3B Disagree Agreeably, the Cushion", "live": True},
@@ -1133,6 +1133,15 @@ def clearcloudy_tally():
     return {"clear": clear, "cloudy": cloudy, "total": clear + cloudy, "lions": lions_out}
 
 
+def energizer_list():
+    out = []
+    for rid, first, last, company, email in ROSTER:
+        r = get_response(rid, "energizer")
+        if r and (r.get("word") or "").strip():
+            out.append({"name": first, "word": r["word"]})
+    return out
+
+
 # ----- Principle Bingo -----
 def bingo_get_state():
     with get_conn() as conn:
@@ -1493,7 +1502,7 @@ function tick(){
   if (!joined){ return; }
   fetch("/state").then(function(r){ return r.json(); }).then(function(st){
     var changed = st.active !== renderedKey;
-    var revealKey = (st.active === "recognition" || st.active === "breakthrough" || st.active === "worryvault");
+    var revealKey = (st.active === "recognition" || st.active === "breakthrough" || st.active === "worryvault" || st.active === "energizer");
     if (revealKey && st.status !== lastRecStatus){ changed = true; }
     if (revealKey){ lastRecStatus = st.status; }
     if (changed){
@@ -1521,6 +1530,10 @@ function renderSpot(key, status){
   if (key === "clearcloudy"){ startClearCloudy(); return; }
   if (key === "worryvault"){
     if (status === "locked"){ worryUp(); } else { startWorry(); }
+    return;
+  }
+  if (key === "energizer"){
+    if (status === "locked"){ energizerUp(); } else { startEnergizer(); }
     return;
   }
   if (key === "breakthrough"){
@@ -1914,6 +1927,47 @@ function worryUp(){
     '<p class="small">The room put its worries up. None of them have names.</p></div>';
 }
 
+// ----- Energizer, one action word to light up your next report -----
+function startEnergizer(){
+  setTitle("Energizer");
+  setBar(0);
+  el("sub").textContent = "One word";
+  fetch("/spot/energizer/mine").then(function(r){ return r.json(); }).then(function(mine){
+    if (mine && mine.word){ energizerSent(); return; }
+    el("body").innerHTML =
+      '<p class="stem">Name one action word or move you will add to make your next report come alive.</p>' +
+      '<input id="enword" maxlength="24" placeholder="Stand, point, pause, build..." style="width:100%;border:1px solid #d7dde3;border-radius:12px;padding:14px;font-size:16px;font-family:inherit;margin:4px 0 12px" />' +
+      '<button class="btn gold" onclick="sendEnergizer()">Add it to the wall</button>';
+  });
+}
+
+function sendEnergizer(){
+  var w = (el("enword").value || "").trim();
+  if (!w){ el("sub").textContent = "Add one word"; return; }
+  api("/spot/energizer/submit", {word: w}).then(function(res){
+    if (res.ok){ energizerSent(); }
+    else if (res.locked){ el("sub").textContent = "Closed now"; }
+  });
+}
+
+function energizerSent(){
+  setBar(100);
+  el("sub").textContent = "On the wall";
+  el("body").innerHTML =
+    '<div class="hold"><span class="tag">ENERGIZED</span>' +
+    '<p class="big">Your word is in.</p>' +
+    '<p class="small">Watch the screen light up with the whole room.</p></div>';
+}
+
+function energizerUp(){
+  setBar(100);
+  el("sub").textContent = "On the screen";
+  el("body").innerHTML =
+    '<div class="hold"><span class="tag">ENERGIZER</span>' +
+    '<p class="big">Look up at the screen.</p>' +
+    '<p class="small">Bring one of these into your next report.</p></div>';
+}
+
 // ----- Principle Draw, deal a principle to each person -----
 function startPrincipleDraw(){
   setTitle("Principle Draw");
@@ -2289,6 +2343,11 @@ HOST_PAGE = """<!DOCTYPE html>
   .bgwin { text-align: center; padding: 42px 24px; }
   .bgwin .wl { font-size: 14px; font-weight: 600; letter-spacing: 2px; color: #d4a017; text-transform: uppercase; }
   .bgwin .wn { font-size: 42px; font-weight: 700; color: #0f2942; margin-top: 12px; }
+  .enwall { padding: 22px 22px 28px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; }
+  .enchip { background: #0d9488; color: #fff; border-radius: 14px; padding: 14px 20px; font-size: 22px; font-weight: 700; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+  .enchip:nth-child(even) { background: #d4a017; color: #3d2c00; }
+  .enchip:nth-child(3n) { background: #3aa9c9; color: #fff; }
+  .enchip .enname { font-size: 12px; font-weight: 500; opacity: 0.85; margin-top: 4px; }
   .wnstage { padding: 46px 24px; text-align: center; }
   .wnstage .lab { font-size: 13px; font-weight: 600; letter-spacing: 2px; color: #0d6e63; text-transform: uppercase; }
   .wnstage .name { font-size: 46px; font-weight: 700; color: #0f2942; margin: 14px 0 8px; line-height: 1.1; }
@@ -2531,6 +2590,25 @@ function drawReviewStage(data){
     '<div class="an">Scroll through everything you did, then tap Email my recap to keep it.</div></div>';
 }
 
+function drawEnergizer(data){
+  if (data.status !== "locked"){
+    var n = (data.energizer || []).length;
+    byid("cnt").textContent = n + " of 7 in";
+    byid("stagebody").innerHTML =
+      '<div class="recintro"><div class="lab">ENERGIZER</div>' +
+      '<div class="big">Energy is building</div>' +
+      '<div class="an">When the room is ready, lock input to light up the wall.</div></div>';
+    return;
+  }
+  byid("cnt").textContent = (data.energizer || []).length + " energizers";
+  var h = '<div class="enwall">';
+  (data.energizer || []).forEach(function(r){
+    h += '<span class="enchip">' + esc(r.word) + '<span class="enname">' + esc(r.name) + '</span></span>';
+  });
+  h += '</div>';
+  byid("stagebody").innerHTML = h;
+}
+
 function drawBingo(data){
   var g = data.bingo || {};
   if (g.winner){
@@ -2683,6 +2761,7 @@ function draw(data){
   else if (data.active === "principledraw"){ drawPrincipleDraw(data); }
   else if (data.active === "clearcloudy"){ drawCloud(data); }
   else if (data.active === "worryvault"){ drawWorry(data); }
+  else if (data.active === "energizer"){ drawEnergizer(data); }
   else if (data.active === "breakthrough"){ drawBreakthrough(data); }
   else if (data.active === "recognition"){ drawRecognition(data); }
   else { drawNext(data); }
@@ -2898,12 +2977,12 @@ function drawSpots(d){
       (votingOpen ? "Close voting" : "Open voting") + '</button> ' +
       '<button class="toggle" onclick="clearSpot(\\'clearcloudy\\')">New speaker</button>';
   } else if (st){
-    var isReveal = (st.key === "recognition" || st.key === "breakthrough" || st.key === "worryvault");
+    var isReveal = (st.key === "recognition" || st.key === "breakthrough" || st.key === "worryvault" || st.key === "energizer");
     var noun = st.key === "breakthrough" ? "the board" : (st.key === "worryvault" ? "the vault" : "the wall");
     var openLbl = isReveal ? ("Reveal " + noun) : "Lock input";
     var lockLbl = isReveal ? ("Hide " + noun) : "Open input";
-    var collecting = st.key === "breakthrough" ? "collecting commitments" : (st.key === "worryvault" ? "collecting worries" : "collecting notes");
-    var showing = st.key === "breakthrough" ? "board is showing" : (st.key === "worryvault" ? "vault is open" : "wall is showing");
+    var collecting = st.key === "breakthrough" ? "collecting commitments" : (st.key === "worryvault" ? "collecting worries" : (st.key === "energizer" ? "collecting energy" : "collecting notes"));
+    var showing = st.key === "breakthrough" ? "board is showing" : (st.key === "worryvault" ? "vault is open" : (st.key === "energizer" ? "wall is up" : "wall is showing"));
     var stateLbl = isReveal
       ? (st.status === "open" ? collecting : showing)
       : (st.status === "open" ? "open" : "closed");
@@ -3308,6 +3387,12 @@ def spot_submit(key):
                 payload["lions"] = lions
         save_response(pid, "clearcloudy", payload)
         return jsonify({"ok": True})
+    if key == "energizer":
+        word = (data.get("word") or "").strip()
+        if not word:
+            return jsonify({"ok": False})
+        save_response(pid, "energizer", {"word": word[:40]})
+        return jsonify({"ok": True})
     return jsonify({"ok": False})
 
 
@@ -3686,6 +3771,8 @@ def host_data(secret):
         payload["quiz"] = {"title": QUIZ_BANKS[active]["title"], "done": quiz_list(active)}
     if active == "worryvault":
         payload["worry"] = worry_list()
+    if active == "energizer":
+        payload["energizer"] = energizer_list()
     if active == "principledraw":
         payload["principledraw"] = principledraw_public()
     if active == "clearcloudy":
