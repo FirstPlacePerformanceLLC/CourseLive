@@ -1426,8 +1426,9 @@ var SPOT_TITLES = __SPOT_TITLES__;
 var QUIZBANKS = __QUIZBANKS__;
 var CCLIONS = __CCLIONS__;
 var IS_PREVIEW = __PREVIEW__;
+var BOOTPID = __BOOTPID__;
 
-var joined = IS_PREVIEW;
+var joined = IS_PREVIEW || (BOOTPID !== null && BOOTPID !== 0);
 var renderedKey = null;
 var lastRecStatus = null;
 var qi = 0;
@@ -2211,13 +2212,17 @@ function renderQuestion(){
   el("body").innerHTML = h;
 }
 
+var discBusy = false;
 function answer(letter){
+  if (discBusy){ return; }
+  discBusy = true;
   api("/answer", {qnum: qi, letter: letter}).then(function(res){
+    discBusy = false;
     if (res && res.ok === false && res.locked){ el("sub").textContent = "Closed for now"; return; }
     qi += 1;
     if (qi >= QUESTIONS.length){ loadResult(); }
     else { renderQuestion(); }
-  });
+  }).catch(function(){ discBusy = false; });
 }
 
 function loadResult(){
@@ -2388,7 +2393,6 @@ HOST_PAGE = """<!DOCTYPE html>
     <div id="stagebody"></div>
   </div>
   <div class="tools">
-    <button class="tbtn" onclick="clearAll()">Clear all responses</button>
     <a class="link" href="/host/__SECRET__/admin">Open the admin console</a>
   </div>
 </div>
@@ -2771,11 +2775,6 @@ function poll(){
   fetch("/host/" + SECRET + "/data").then(function(r){ return r.json(); }).then(draw).catch(function(){});
 }
 
-function clearAll(){
-  if (!confirm("Clear all responses and reset the room?")) return;
-  fetch("/host/" + SECRET + "/clear", {method:"POST"}).then(function(){ poll(); });
-}
-
 poll();
 setInterval(poll, 1500);
 </script>
@@ -2941,7 +2940,8 @@ function clearSpot(key){
 }
 function clearPreview(){ post("/clear_preview", {}).then(function(){ alert("Preview run cleared."); }); }
 function clearAll(){
-  if (!confirm("Clear every response in the whole room?")) return;
+  var v = prompt("This erases every response and the recap data for all three days. This cannot be undone. Type CLEAR to confirm.");
+  if (v !== "CLEAR") return;
   post("/clear", {}).then(load);
 }
 
@@ -3228,6 +3228,11 @@ setInterval(load, 1500);
 # Participant routes
 # ---------------------------------------------------------------------------
 def render_participant(is_preview):
+    if is_preview:
+        bootpid = PREVIEW_PID
+    else:
+        sp = session.get("pid")
+        bootpid = sp if sp in ROSTER_IDS else None
     html = PAGE.replace("__QUESTIONS__", json.dumps(QUESTIONS))
     html = html.replace("__LEAN__", json.dumps(LEAN))
     html = html.replace("__UPSELL__", json.dumps(UPSELL))
@@ -3236,6 +3241,7 @@ def render_participant(is_preview):
     html = html.replace("__QUIZBANKS__", json.dumps(QUIZ_BANKS))
     html = html.replace("__CCLIONS__", json.dumps(CC_LIONS))
     html = html.replace("__PREVIEW__", "true" if is_preview else "false")
+    html = html.replace("__BOOTPID__", json.dumps(bootpid))
     return Response(html, mimetype="text/html")
 
 
