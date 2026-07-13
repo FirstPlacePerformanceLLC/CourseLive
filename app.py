@@ -51,11 +51,11 @@ SPOTS = [
     {"key": "namegame", "day": 1, "title": "Name Game", "anchor": "1B Recall and Use Names, Pause Part Punch", "live": True},
     {"key": "pegquiz", "day": 1, "title": "Peg Quiz", "anchor": "1C Peg Words 1 to 9", "live": True},
     {"key": "breakthrough", "day": 1, "title": "Breakthrough Board", "anchor": "1C Commit to Enhance Relationships", "live": True},
-    {"key": "principledraw", "day": 2, "title": "Principle Draw", "anchor": "Day 2 principle assignments", "live": True},
+    {"key": "principledraw", "day": 2, "title": "Principle Draw", "anchor": "2A Motivate Others and Enhance Relationships", "live": True},
     {"key": "clearcloudy", "day": 2, "title": "Clear or Cloudy", "anchor": "2B Make Our Ideas Clear, Magic Formula", "live": True},
     {"key": "energizer", "day": 2, "title": "Energizer", "anchor": "2C Energize Our Communications", "live": True},
     {"key": "worryvault", "day": 2, "title": "Worry Vault", "anchor": "2D Put Stress in Perspective", "live": True},
-    {"key": "jeopardy", "day": 3, "title": "Quizo", "anchor": "Day Three review, all principle families plus Magic Formula, LIONS, and Worry", "live": True},
+    {"key": "jeopardy", "day": 3, "title": "Quizo", "anchor": "3A Gain Cooperation and Leadership review, plus Magic Formula, LIONS, and Worry", "live": True},
     {"key": "taketheturn", "day": 3, "title": "Take the Turn", "anchor": "3B Disagree Agreeably, the Cushion", "live": True},
     {"key": "disc", "day": 3, "title": "Your DISC Lean", "anchor": "3C Develop More Flexibility, How People View Us", "live": True},
     {"key": "recognition", "day": 3, "title": "Recognition Wall", "anchor": "3D Build Others Through Recognition", "live": True},
@@ -561,7 +561,9 @@ def init_db():
                 INSERT INTO whonext_state (id, current_pid) VALUES (1, NULL)
                 ON CONFLICT (id) DO NOTHING
             """)
-            cur.execute("ALTER TABLE whonext_state ADD COLUMN IF NOT EXISTS pick_seq INTEGER NOT NULL DEFAULT 0")
+            cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name = 'whonext_state' AND column_name = 'pick_seq'")
+            if cur.fetchone() is None:
+                cur.execute("ALTER TABLE whonext_state ADD COLUMN IF NOT EXISTS pick_seq INTEGER NOT NULL DEFAULT 0")
             cur.execute("""
                 INSERT INTO jeopardy_state (id, phase) VALUES (1, 'board')
                 ON CONFLICT (id) DO NOTHING
