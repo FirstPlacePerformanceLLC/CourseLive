@@ -43,7 +43,7 @@ ROSTER_IDS = [r[0] for r in ROSTER]
 SPOTS = [
     {"key": "welcome", "day": 0, "title": "Welcome", "anchor": "Greet the room as students join", "live": True},
     {"key": "who_next", "day": 0, "title": "Who's Next", "anchor": "Random name picker, all three days", "live": True},
-    {"key": "bingo", "day": 0, "title": "Principle Bingo", "anchor": "All 30 Human Relations Principles", "live": False},
+    {"key": "bingo", "day": 0, "title": "Principle Bingo", "anchor": "All 30 Human Relations Principles", "live": True},
     {"key": "rollcall", "day": 1, "title": "Roll Call", "anchor": "1A Build a Foundation, Five Drivers of Success", "live": True},
     {"key": "namegame", "day": 1, "title": "Name Game", "anchor": "1B Recall and Use Names, Pause Part Punch", "live": True},
     {"key": "pegquiz", "day": 1, "title": "Peg Quiz", "anchor": "1C Peg Words 1 to 9", "live": True},
@@ -380,7 +380,46 @@ PRINCIPLES = [
     "Make the other person happy about doing the thing you suggest",
 ]
 
-# Clear or Cloudy, the live LIONS feedback poll.
+# Short tags for the same 30 principles, same order, for the Bingo card face.
+PRINCIPLE_SHORT = [
+    "Don't criticize",
+    "Sincere appreciation",
+    "Arouse a want",
+    "Be interested",
+    "Smile",
+    "Use their name",
+    "Listen well",
+    "Their interests",
+    "Feel important",
+    "Avoid arguments",
+    "Respect opinions",
+    "Admit if wrong",
+    "Be friendly",
+    "Get a yes",
+    "Let them talk",
+    "Their idea",
+    "Their point of view",
+    "Be sympathetic",
+    "Nobler motives",
+    "Dramatize",
+    "A challenge",
+    "Begin with praise",
+    "Correct indirectly",
+    "Own mistakes first",
+    "Ask, don't order",
+    "Save face",
+    "Praise improvement",
+    "Fine reputation",
+    "Make it easy",
+    "Happy to help",
+]
+
+# Bingo win lines over a 5 by 5 board, positions 0 to 24, center 12 is free.
+BINGO_LINES = [
+    [0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14], [15, 16, 17, 18, 19], [20, 21, 22, 23, 24],
+    [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], [3, 8, 13, 18, 23], [4, 9, 14, 19, 24],
+    [0, 6, 12, 18, 24], [4, 8, 12, 16, 20],
+]
 CC_LIONS = [
     {"key": "L", "label": "Language, keep it easily understood"},
     {"key": "I", "label": "Illustrations, use them to clarify"},
@@ -490,6 +529,23 @@ def init_db():
                     pid INTEGER PRIMARY KEY,
                     idx INTEGER NOT NULL
                 )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS bingo_state (
+                    id INTEGER PRIMARY KEY,
+                    nonce INTEGER NOT NULL DEFAULT 0,
+                    winner_pid INTEGER
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS bingo_called (
+                    idx INTEGER PRIMARY KEY,
+                    called_at TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+            cur.execute("""
+                INSERT INTO bingo_state (id, nonce) VALUES (1, 0)
+                ON CONFLICT (id) DO NOTHING
             """)
             cur.execute("""
                 INSERT INTO whonext_state (id, current_pid) VALUES (1, NULL)
@@ -1070,6 +1126,117 @@ def clearcloudy_tally():
     return {"clear": clear, "cloudy": cloudy, "total": clear + cloudy, "lions": lions_out}
 
 
+# ----- Principle Bingo -----
+def bingo_get_state():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT nonce, winner_pid FROM bingo_state WHERE id = 1")
+            row = cur.fetchone()
+    if not row:
+        return {"nonce": 0, "winner_pid": None}
+    return {"nonce": row[0], "winner_pid": row[1]}
+
+
+def bingo_called_list():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT idx FROM bingo_called ORDER BY called_at")
+            return [i for (i,) in cur.fetchall()]
+
+
+def bingo_card_positions(pid, nonce):
+    rng = random.Random(str(pid) + "_" + str(nonce))
+    idxs = list(range(len(PRINCIPLES)))
+    rng.shuffle(idxs)
+    picked = idxs[:24]
+    positions = []
+    pi = 0
+    for pos in range(25):
+        if pos == 12:
+            positions.append(None)
+        else:
+            positions.append(picked[pi])
+            pi += 1
+    return positions
+
+
+def bingo_marked(positions, called_set):
+    return [(pos == 12) or (positions[pos] is not None and positions[pos] in called_set) for pos in range(25)]
+
+
+def bingo_has_line(marked):
+    for line in BINGO_LINES:
+        if all(marked[p] for p in line):
+            return True
+    return False
+
+
+def bingo_call_toggle(idx):
+    if idx < 0 or idx >= len(PRINCIPLES):
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM bingo_called WHERE idx = %s", (idx,))
+            exists = cur.fetchone() is not None
+            if exists:
+                cur.execute("DELETE FROM bingo_called WHERE idx = %s", (idx,))
+            else:
+                cur.execute("INSERT INTO bingo_called (idx) VALUES (%s) ON CONFLICT (idx) DO NOTHING", (idx,))
+        conn.commit()
+
+
+def bingo_try_claim(pid):
+    st = bingo_get_state()
+    called = set(bingo_called_list())
+    positions = bingo_card_positions(pid, st["nonce"])
+    if not bingo_has_line(bingo_marked(positions, called)):
+        return False, False  # valid, won
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE bingo_state SET winner_pid = %s WHERE id = 1 AND winner_pid IS NULL", (pid,))
+            won = cur.rowcount == 1
+        conn.commit()
+    return True, won
+
+
+def bingo_new_game():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM bingo_called")
+            cur.execute("UPDATE bingo_state SET nonce = nonce + 1, winner_pid = NULL WHERE id = 1")
+        conn.commit()
+
+
+def bingo_winner_name():
+    st = bingo_get_state()
+    wp = st["winner_pid"]
+    if wp is None:
+        return None
+    for rid, first, last, company, email in ROSTER:
+        if rid == wp:
+            return first + " " + last
+    return None
+
+
+def bingo_host_public():
+    st = bingo_get_state()
+    called = bingo_called_list()
+    called_set = set(called)
+    principles = []
+    for i in range(len(PRINCIPLES)):
+        principles.append({"idx": i, "short": PRINCIPLE_SHORT[i], "text": PRINCIPLES[i], "called": i in called_set})
+    last_idx = called[-1] if called else None
+    return {
+        "principles": principles,
+        "count": len(called),
+        "last": last_idx,
+        "last_text": PRINCIPLES[last_idx] if last_idx is not None else None,
+        "last_short": PRINCIPLE_SHORT[last_idx] if last_idx is not None else None,
+        "called_short": [PRINCIPLE_SHORT[i] for i in called],
+        "winner": bingo_winner_name(),
+    }
+
+
 PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1116,6 +1283,10 @@ PAGE = """<!DOCTYPE html>
   .hold .big { font-size: 20px; font-weight: 600; margin: 6px 0 8px; }
   .hold .small { font-size: 14px; color: #5f6b76; line-height: 1.5; }
   .tag { display: inline-block; font-size: 11px; font-weight: 600; color: #0d6e63; background: #e1f5ee; border-radius: 999px; padding: 3px 10px; margin-bottom: 6px; }
+  .bgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+  .bcell { background: #f4f6f8; border: 1px solid #e0e6ec; border-radius: 8px; min-height: 62px; padding: 4px 3px; font-size: 10px; font-weight: 500; color: #33475b; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.15; }
+  .bcell.on { background: #0d9488; border-color: #0d9488; color: #ffffff; font-weight: 600; }
+  .bcell.free { background: #d4a017; border-color: #d4a017; color: #3d2c00; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -1159,6 +1330,8 @@ var pdLastSig = "";
 var ccTimer = null;
 var ccLastSig = "";
 var ccBusy = false;
+var bgTimer = null;
+var bgLastSig = "";
 
 function esc(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 function el(id){ return document.getElementById(id); }
@@ -1229,11 +1402,13 @@ function renderSpot(key, status){
   if (wnTimer && key !== "who_next"){ clearInterval(wnTimer); wnTimer = null; }
   if (pdTimer && key !== "principledraw"){ clearInterval(pdTimer); pdTimer = null; }
   if (ccTimer && key !== "clearcloudy"){ clearInterval(ccTimer); ccTimer = null; }
+  if (bgTimer && key !== "bingo"){ clearInterval(bgTimer); bgTimer = null; }
   if (key === "welcome"){ renderJoined(); return; }
   if (key === "disc"){ startDisc(); return; }
   if (key === "rollcall"){ startRollcall(); return; }
   if (key === "jeopardy"){ startJeopardy(); return; }
   if (key === "who_next"){ startWhoNext(); return; }
+  if (key === "bingo"){ startBingo(); return; }
   if (key === "pegquiz" || key === "taketheturn" || key === "namegame"){ startQuiz(key); return; }
   if (key === "principledraw"){ startPrincipleDraw(); return; }
   if (key === "clearcloudy"){ startClearCloudy(); return; }
@@ -1732,6 +1907,57 @@ function ccSubmitCloudy(k){
     .catch(function(){ ccLastSig = ""; ccPoll(); });
 }
 
+// ----- Principle Bingo -----
+function startBingo(){
+  setTitle("Principle Bingo");
+  setBar(0);
+  el("sub").textContent = "Mark as they call";
+  el("body").innerHTML = '<div id="bgbody"></div>';
+  bgLastSig = "";
+  bgPoll();
+  if (bgTimer){ clearInterval(bgTimer); }
+  bgTimer = setInterval(bgPoll, 1200);
+}
+
+function bgPoll(){
+  fetch("/spot/bingo/me").then(function(r){ return r.json(); }).then(function(d){
+    if (!d || d.ok === false){ return; }
+    var sig = (d.marked || []).join("") + "|" + (d.winner || "") + "|" + (d.has_line ? "1" : "0") + "|" + (d.you_won ? "1" : "0");
+    if (sig === bgLastSig){ return; }
+    bgLastSig = sig;
+    drawBingoPhone(d);
+  }).catch(function(){});
+}
+
+function drawBingoPhone(d){
+  var b = el("bgbody");
+  if (!b){ return; }
+  var cells = d.cells || [];
+  var marked = d.marked || [];
+  var h = '';
+  if (d.you_won){
+    h += '<div class="hold" style="padding:8px 6px 12px"><span class="tag">BINGO</span><p class="big">You got Bingo</p><p class="small">Call it out. You won this round.</p></div>';
+  } else if (d.winner){
+    h += '<div class="hold" style="padding:8px 6px 12px"><span class="tag">BINGO</span><p class="big">' + esc(d.winner) + ' got Bingo</p><p class="small">Good game. Watch for a fresh card.</p></div>';
+  } else if (d.has_line){
+    h += '<button class="btn gold" style="margin-bottom:12px" onclick="claimBingo()">I have Bingo, call it</button>';
+  }
+  h += '<div class="bgrid">';
+  for (var i = 0; i < 25; i++){
+    var free = (i === 12);
+    var cls = 'bcell' + (marked[i] ? ' on' : '') + (free ? ' free' : '');
+    var label = free ? 'FREE' : esc(cells[i] || '');
+    h += '<div class="' + cls + '">' + label + '</div>';
+  }
+  h += '</div>';
+  b.innerHTML = h;
+}
+
+function claimBingo(){
+  api("/spot/bingo/claim", {}).then(function(){ bgLastSig = ""; bgPoll(); })
+    .catch(function(){ bgLastSig = ""; bgPoll(); });
+}
+
 // ----- DISC -----
 function startDisc(){
   setTitle("Your DISC Lean");
@@ -1876,6 +2102,16 @@ HOST_PAGE = """<!DOCTYPE html>
   .cctrack { height: 20px; background: #e6ebef; border-radius: 6px; overflow: hidden; }
   .ccfill { height: 20px; border-radius: 6px; width: 0%; transition: width 0.4s; }
   .cclab { font-size: 13px; font-weight: 600; color: #5f6b76; text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 10px; }
+  .bgstage { padding: 22px 22px 28px; }
+  .bgstage .lab { font-size: 13px; font-weight: 600; letter-spacing: 2px; color: #0d6e63; text-transform: uppercase; text-align: center; }
+  .bglast { text-align: center; background: #0f2942; border-radius: 12px; padding: 22px; margin: 12px 0 16px; }
+  .bglast .ls { font-size: 13px; color: #d4a017; font-weight: 600; letter-spacing: 1px; }
+  .bglast .lt { font-size: 26px; color: #fff; font-weight: 600; margin-top: 6px; line-height: 1.3; }
+  .bgcalled { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .bgchip { background: #e1f5ee; color: #0d6e63; border-radius: 999px; padding: 7px 14px; font-size: 14px; font-weight: 500; }
+  .bgwin { text-align: center; padding: 42px 24px; }
+  .bgwin .wl { font-size: 14px; font-weight: 600; letter-spacing: 2px; color: #d4a017; text-transform: uppercase; }
+  .bgwin .wn { font-size: 42px; font-weight: 700; color: #0f2942; margin-top: 12px; }
   .wnstage { padding: 46px 24px; text-align: center; }
   .wnstage .lab { font-size: 13px; font-weight: 600; letter-spacing: 2px; color: #0d6e63; text-transform: uppercase; }
   .wnstage .name { font-size: 46px; font-weight: 700; color: #0f2942; margin: 14px 0 8px; line-height: 1.1; }
@@ -2110,6 +2346,30 @@ function drawJeopardy(data){
   byid("stagebody").innerHTML = h;
 }
 
+function drawBingo(data){
+  var g = data.bingo || {};
+  if (g.winner){
+    byid("cnt").textContent = "";
+    byid("stagebody").innerHTML = '<div class="bgwin"><div class="wl">Bingo</div><div class="wn">' + esc(g.winner) + '</div></div>';
+    return;
+  }
+  byid("cnt").textContent = (g.count || 0) + " called";
+  var h = '<div class="bgstage"><div class="lab">Principle Bingo</div>';
+  if (g.last_text){
+    h += '<div class="bglast"><div class="ls">Just called</div><div class="lt">' + esc(g.last_text) + '</div></div>';
+  } else {
+    h += '<div class="bglast"><div class="lt" style="color:#9fe1cb;font-size:20px">Call the first principle to begin</div></div>';
+  }
+  var chips = g.called_short || [];
+  if (chips.length){
+    h += '<div class="bgcalled">';
+    chips.forEach(function(s){ h += '<span class="bgchip">' + esc(s) + '</span>'; });
+    h += '</div>';
+  }
+  h += '</div>';
+  byid("stagebody").innerHTML = h;
+}
+
 function drawPrincipleDraw(data){
   var p = data.principledraw || {};
   var rows = p.rows || [];
@@ -2232,6 +2492,7 @@ function draw(data){
   else if (data.active === "rollcall"){ drawTally(data); }
   else if (data.active === "jeopardy"){ drawJeopardy(data); }
   else if (data.active === "who_next"){ drawWhoNext(data); }
+  else if (data.active === "bingo"){ drawBingo(data); }
   else if (data.active === "pegquiz" || data.active === "taketheturn" || data.active === "namegame"){ drawQuiz(data); }
   else if (data.active === "principledraw"){ drawPrincipleDraw(data); }
   else if (data.active === "clearcloudy"){ drawCloud(data); }
@@ -2320,6 +2581,9 @@ ADMIN_PAGE = """<!DOCTYPE html>
   .jact .b.bad { background: #fff; color: #993556; border-color: #e3b8c4; }
   .jscoremini { display: flex; gap: 8px; margin-top: 12px; }
   .jscoremini .s { flex: 1; border-radius: 8px; padding: 8px 10px; text-align: center; color: #fff; }
+  .bgcall { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin-top: 8px; }
+  .bgc { border: 1px solid #d7dde3; background: #fff; border-radius: 8px; padding: 8px 10px; font-size: 12px; font-family: inherit; cursor: pointer; text-align: left; line-height: 1.2; }
+  .bgc.called { background: #0d9488; color: #fff; border-color: #0d9488; }
 </style>
 </head>
 <body>
@@ -2356,6 +2620,13 @@ ADMIN_PAGE = """<!DOCTYPE html>
     <h2>Principle Draw</h2>
     <div class="panel">
       <div id="pdadmin"></div>
+    </div>
+  </div>
+
+  <div id="bgsection" style="display:none">
+    <h2>Principle Bingo</h2>
+    <div class="panel">
+      <div id="bgadmin"></div>
     </div>
   </div>
 
@@ -2425,6 +2696,9 @@ function drawSpots(d){
   } else if (st && st.key === "principledraw"){
     sl = 'Principle Draw runs from the panel below. ' +
       '<button class="toggle" onclick="clearSpot(\\'principledraw\\')">Clear the draw</button>';
+  } else if (st && st.key === "bingo"){
+    sl = 'Principle Bingo runs from the panel below. ' +
+      '<button class="toggle" onclick="clearSpot(\\'bingo\\')">New game</button>';
   } else if (st && st.key === "clearcloudy"){
     var votingOpen = st.status === "open";
     sl = 'Voting is <strong>' + (votingOpen ? "open" : "closed") + '</strong> for Clear or Cloudy. ' +
@@ -2559,11 +2833,32 @@ function drawJeopardyAdmin(d){
 
 var wnAdminSig = "";
 var pdAdminSig = "";
+var bgAdminSig = "";
 
 function pickNext(){ post("/whonext/pick", {}).then(function(){ wnAdminSig = ""; load(); }); }
 function resetWhoNext(){ if (!confirm("Reset the round so everyone is eligible again?")) return; post("/whonext/reset", {}).then(function(){ wnAdminSig = ""; load(); }); }
 function dealPrinciples(){ post("/principledraw/deal", {}).then(function(){ pdAdminSig = ""; load(); }); }
 function resetPrincipleDraw(){ if (!confirm("Clear the current draw?")) return; post("/principledraw/reset", {}).then(function(){ pdAdminSig = ""; load(); }); }
+function callPrinciple(idx){ post("/bingo/call", {idx: idx}).then(function(){ bgAdminSig = ""; load(); }); }
+function newBingo(){ if (!confirm("Start a new Bingo game? Everyone gets a fresh card.")) return; post("/bingo/new", {}).then(function(){ bgAdminSig = ""; load(); }); }
+
+function drawBingoAdmin(d){
+  var g = d.bingo || {};
+  var sig = JSON.stringify(g);
+  if (sig === bgAdminSig){ return; }
+  bgAdminSig = sig;
+  var h = '';
+  if (g.winner){
+    h += '<div style="background:#e1f5ee;border-radius:10px;padding:12px 14px;margin-bottom:10px"><strong>' + esc(g.winner) + '</strong> has Bingo. Verify the card against the called list, then start a new game.</div>';
+  }
+  h += '<div style="font-size:12px;color:#5f6b76;margin-bottom:6px">' + (g.count || 0) + ' called. Tap a principle to call it, tap again to take it back. Read it aloud as you call it.</div>';
+  h += '<div class="bgcall">';
+  (g.principles || []).forEach(function(p){
+    h += '<button class="bgc' + (p.called ? " called" : "") + '" onclick="callPrinciple(' + p.idx + ')">' + esc(p.text) + '</button>';
+  });
+  h += '</div><div class="row2" style="margin-top:10px"><button class="mini warn" onclick="newBingo()">New game, fresh cards</button></div>';
+  byid("bgadmin").innerHTML = h;
+}
 
 function drawPrincipleDrawAdmin(d){
   var p = d.principledraw || {};
@@ -2621,6 +2916,9 @@ function load(){
     var pds = byid("pdsection");
     if (d.active === "principledraw"){ pds.style.display = "block"; drawPrincipleDrawAdmin(d); }
     else { pds.style.display = "none"; pdAdminSig = ""; }
+    var bgs = byid("bgsection");
+    if (d.active === "bingo"){ bgs.style.display = "block"; drawBingoAdmin(d); }
+    else { bgs.style.display = "none"; bgAdminSig = ""; }
   }).catch(function(){});
 }
 
@@ -2910,6 +3208,43 @@ def clearcloudy_me():
     })
 
 
+@app.route("/spot/bingo/me")
+def bingo_me():
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({"ok": False})
+    st = bingo_get_state()
+    called = set(bingo_called_list())
+    positions = bingo_card_positions(pid, st["nonce"])
+    marked = bingo_marked(positions, called)
+    cells = []
+    for pos in range(25):
+        idx = positions[pos]
+        if pos == 12 or idx is None:
+            cells.append("")
+        else:
+            cells.append(PRINCIPLE_SHORT[idx] if 0 <= idx < len(PRINCIPLE_SHORT) else "")
+    return jsonify({
+        "ok": True,
+        "cells": cells,
+        "marked": marked,
+        "has_line": bingo_has_line(marked),
+        "winner": bingo_winner_name(),
+        "you_won": (st["winner_pid"] is not None and st["winner_pid"] == pid),
+    })
+
+
+@app.route("/spot/bingo/claim", methods=["POST"])
+def bingo_claim():
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({"ok": False})
+    if get_active_spot() != "bingo":
+        return jsonify({"ok": False})
+    valid, won = bingo_try_claim(pid)
+    return jsonify({"ok": True, "valid": valid, "won": won})
+
+
 def send_result_email(to_email, to_name, primary, blend):
     if not SENDGRID_API_KEY:
         return {"ok": False, "status": "skipped"}
@@ -3044,6 +3379,15 @@ def host_data(secret):
         payload["principledraw"] = principledraw_public()
     if active == "clearcloudy":
         payload["clearcloudy"] = clearcloudy_tally()
+    if active == "bingo":
+        called = bingo_called_list()
+        last = called[-1] if called else None
+        payload["bingo"] = {
+            "winner": bingo_winner_name(),
+            "count": len(called),
+            "last_text": PRINCIPLES[last] if last is not None else None,
+            "called_short": [PRINCIPLE_SHORT[i] for i in called],
+        }
     return jsonify(payload)
 
 
@@ -3068,6 +3412,8 @@ def host_clear(secret):
             cur.execute("DELETE FROM whonext_done")
             cur.execute("UPDATE whonext_state SET current_pid = NULL WHERE id = 1")
             cur.execute("DELETE FROM principle_draw")
+            cur.execute("DELETE FROM bingo_called")
+            cur.execute("UPDATE bingo_state SET winner_pid = NULL, nonce = nonce + 1 WHERE id = 1")
         conn.commit()
     return jsonify({"ok": True})
 
@@ -3127,6 +3473,7 @@ def admin_data(secret):
         "jmembers": jeopardy_members_map(),
         "whonext": whonext_public(),
         "principledraw": principledraw_public(),
+        "bingo": bingo_host_public(),
     })
 
 
@@ -3191,6 +3538,9 @@ def host_clear_spot(secret):
         return jsonify({"ok": True})
     if key == "principledraw":
         principledraw_reset()
+        return jsonify({"ok": True})
+    if key == "bingo":
+        bingo_new_game()
         return jsonify({"ok": True})
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -3365,6 +3715,26 @@ def principledraw_reset_route(secret):
     if secret != HOST_SECRET:
         return jsonify({"ok": False}), 404
     principledraw_reset()
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/bingo/call", methods=["POST"])
+def bingo_call_route(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    idx = data.get("idx")
+    if not isinstance(idx, int) or idx < 0 or idx >= len(PRINCIPLES):
+        return jsonify({"ok": False})
+    bingo_call_toggle(idx)
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/bingo/new", methods=["POST"])
+def bingo_new_route(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    bingo_new_game()
     return jsonify({"ok": True})
 
 
