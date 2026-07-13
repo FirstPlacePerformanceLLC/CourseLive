@@ -50,7 +50,7 @@ SPOTS = [
     {"key": "clearcloudy", "day": 2, "title": "Clear or Cloudy", "anchor": "2B Make Our Ideas Clear, Magic Formula", "live": False},
     {"key": "energizer", "day": 2, "title": "Energizer", "anchor": "2C Energize Our Communications", "live": False},
     {"key": "worryvault", "day": 2, "title": "Worry Vault", "anchor": "2D Put Stress in Perspective", "live": False},
-    {"key": "jeopardy", "day": 3, "title": "Jeopardy", "anchor": "3A Gain Willing Cooperation review", "live": False},
+    {"key": "jeopardy", "day": 3, "title": "Quizo", "anchor": "Day Three review, all principle families plus Magic Formula, LIONS, and Worry", "live": True},
     {"key": "taketheturn", "day": 3, "title": "Take the Turn", "anchor": "3B Disagree Agreeably, the Cushion", "live": False},
     {"key": "disc", "day": 3, "title": "Your DISC Lean", "anchor": "3C Develop More Flexibility, How People View Us", "live": True},
     {"key": "recognition", "day": 3, "title": "Recognition Wall", "anchor": "3D Build Others Through Recognition", "live": True},
@@ -193,6 +193,76 @@ UPSELL = ("This is a quick lean, not the full picture. The complete validated DI
           "assessment goes deeper. Ask me about it after class.")
 
 
+# ---------------------------------------------------------------------------
+# Quizo, the Day Three review board. Internal spot key is jeopardy, the screen
+# name is Quizo. Three teams, seven categories, four values, buzz decided
+# server side by first arrival. Content grounded in the course deck.
+# ---------------------------------------------------------------------------
+JTEAMS = [
+    {"n": 1, "name": "Team 1", "color": "#0d9488"},
+    {"n": 2, "name": "Team 2", "color": "#d4a017"},
+    {"n": 3, "name": "Team 3", "color": "#3aa9c9"},
+]
+JTEAM_NUMS = [t["n"] for t in JTEAMS]
+JTEAM_BY_NUM = {t["n"]: t for t in JTEAMS}
+
+JCATS = [
+    {"key": "enhance", "title": "Enhance Relationships"},
+    {"key": "cooperation", "title": "Gain Willing Cooperation"},
+    {"key": "leader", "title": "Be a Leader"},
+    {"key": "magic", "title": "Magic Formula"},
+    {"key": "lions", "title": "LIONS"},
+    {"key": "worry", "title": "Worry"},
+    {"key": "potpourri", "title": "Potpourri"},
+]
+JVALS = [100, 200, 300, 400]
+
+# Keyed category index then value index. Every clue grounded in the deck,
+# except Potpourri which is clean general knowledge by design.
+JCLUES = {
+    "0_0": {"clue": "The three things Carnegie says never to do to people.", "answer": "Criticize, condemn, or complain"},
+    "0_1": {"clue": "Carnegie calls this the sweetest and most important sound in any language.", "answer": "A person's own name"},
+    "0_2": {"clue": "Principle five, the simple thing you do with your face to make people like you.", "answer": "Smile"},
+    "0_3": {"clue": "Give appreciation that is honest and this.", "answer": "Sincere"},
+    "1_0": {"clue": "The only way to get the best of an argument.", "answer": "Avoid it"},
+    "1_1": {"clue": "When you are wrong, do this quickly and emphatically.", "answer": "Admit it"},
+    "1_2": {"clue": "To win cooperation, let the other person feel the idea is this.", "answer": "His or hers"},
+    "1_3": {"clue": "Appeal to these higher motives to move people.", "answer": "Nobler motives"},
+    "2_0": {"clue": "A leader begins with praise and honest this.", "answer": "Appreciation"},
+    "2_1": {"clue": "Call attention to people's mistakes this way, so they do not resent it.", "answer": "Indirectly"},
+    "2_2": {"clue": "Talk about your own these before criticizing the other person.", "answer": "Mistakes"},
+    "2_3": {"clue": "Give the other person one of these fine ones to live up to.", "answer": "Reputation"},
+    "3_0": {"clue": "The Magic Formula has this many steps.", "answer": "Three"},
+    "3_1": {"clue": "Step one, tell the incident or give this.", "answer": "Evidence"},
+    "3_2": {"clue": "Step two, make a clear statement asking for this.", "answer": "Action"},
+    "3_3": {"clue": "Step three, the positive result for the listener.", "answer": "The benefit"},
+    "4_0": {"clue": "The L in LIONS, keep this easily understood.", "answer": "Language"},
+    "4_1": {"clue": "The I in LIONS, use these to clarify.", "answer": "Illustrations"},
+    "4_2": {"clue": "The O in LIONS, do this to your thoughts.", "answer": "Organize them"},
+    "4_3": {"clue": "The S in LIONS, do this to your key points at the end.", "answer": "Summarize them"},
+    "5_0": {"clue": "Carnegie says live in these tight compartments.", "answer": "Day tight compartments"},
+    "5_1": {"clue": "The first question to ask facing trouble, what is the worst that can do this.", "answer": "Possibly happen"},
+    "5_2": {"clue": "After you accept the worst, you try to do this to it.", "answer": "Improve on it"},
+    "5_3": {"clue": "Worry can make you pay an exorbitant price in terms of this.", "answer": "Your health"},
+    "6_0": {"clue": "This planet is known as the Red Planet.", "answer": "Mars"},
+    "6_1": {"clue": "The number of strings on a standard guitar.", "answer": "Six"},
+    "6_2": {"clue": "The largest ocean on Earth.", "answer": "The Pacific"},
+    "6_3": {"clue": "The artist who painted the Mona Lisa.", "answer": "Leonardo da Vinci"},
+}
+
+
+def jcid(c, v):
+    return str(c) + "_" + str(v)
+
+
+def jvalue_for(cid):
+    try:
+        c, v = cid.split("_")
+        return JVALS[int(v)]
+    except Exception:
+        return 0
+
+
 def get_conn():
     return psycopg.connect(DATABASE_URL)
 
@@ -244,6 +314,40 @@ def init_db():
                     spot_key TEXT PRIMARY KEY,
                     status TEXT NOT NULL DEFAULT 'open'
                 )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS jeopardy_members (
+                    pid INTEGER PRIMARY KEY,
+                    team INTEGER NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS jeopardy_state (
+                    id INTEGER PRIMARY KEY,
+                    active_cid TEXT,
+                    phase TEXT NOT NULL DEFAULT 'board',
+                    buzz_team INTEGER,
+                    revealed BOOLEAN NOT NULL DEFAULT FALSE,
+                    winner_shown BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS jeopardy_results (
+                    cid TEXT PRIMARY KEY,
+                    win_team INTEGER,
+                    value INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS jeopardy_lockout (
+                    cid TEXT NOT NULL,
+                    team INTEGER NOT NULL,
+                    PRIMARY KEY (cid, team)
+                )
+            """)
+            cur.execute("""
+                INSERT INTO jeopardy_state (id, phase) VALUES (1, 'board')
+                ON CONFLICT (id) DO NOTHING
             """)
             cur.execute("""
                 INSERT INTO app_state (id, active_spot) VALUES (1, %s)
@@ -420,6 +524,201 @@ def current_pid():
     return session.get("pid")
 
 
+# ---------------------------------------------------------------------------
+# Quizo helpers. Scores derive from won clues so nothing can drift.
+# ---------------------------------------------------------------------------
+def jeopardy_get_state():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT active_cid, phase, buzz_team, revealed, winner_shown
+                FROM jeopardy_state WHERE id = 1
+            """)
+            row = cur.fetchone()
+    if not row:
+        return {"active_cid": None, "phase": "board", "buzz_team": None,
+                "revealed": False, "winner_shown": False}
+    return {"active_cid": row[0], "phase": row[1], "buzz_team": row[2],
+            "revealed": bool(row[3]), "winner_shown": bool(row[4])}
+
+
+def jeopardy_set_state(active_cid=None, phase=None, buzz_team="keep",
+                       revealed=None, winner_shown=None):
+    sets, vals = [], []
+    if phase is not None:
+        sets.append("phase = %s"); vals.append(phase)
+    if buzz_team != "keep":
+        sets.append("buzz_team = %s"); vals.append(buzz_team)
+    if revealed is not None:
+        sets.append("revealed = %s"); vals.append(revealed)
+    if winner_shown is not None:
+        sets.append("winner_shown = %s"); vals.append(winner_shown)
+    if active_cid == "clear":
+        sets.append("active_cid = %s"); vals.append(None)
+    elif active_cid is not None:
+        sets.append("active_cid = %s"); vals.append(active_cid)
+    if not sets:
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE jeopardy_state SET " + ", ".join(sets) + " WHERE id = 1", vals)
+        conn.commit()
+
+
+def jeopardy_member(pid):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT team FROM jeopardy_members WHERE pid = %s", (pid,))
+            row = cur.fetchone()
+            return row[0] if row else None
+
+
+def jeopardy_members_map():
+    out = {}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pid, team FROM jeopardy_members")
+            for pid, team in cur.fetchall():
+                out[pid] = team
+    return out
+
+
+def jeopardy_assign(pid, team):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO jeopardy_members (pid, team) VALUES (%s, %s)
+                ON CONFLICT (pid) DO UPDATE SET team = EXCLUDED.team
+            """, (pid, team))
+        conn.commit()
+
+
+def jeopardy_results_map():
+    out = {}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT cid, win_team, value FROM jeopardy_results")
+            for cid, win_team, value in cur.fetchall():
+                out[cid] = {"win_team": win_team, "value": value}
+    return out
+
+
+def jeopardy_scores():
+    scores = {t["n"]: 0 for t in JTEAMS}
+    for r in jeopardy_results_map().values():
+        wt = r["win_team"]
+        if wt in scores:
+            scores[wt] += r["value"] or 0
+    return scores
+
+
+def jeopardy_record_result(cid, win_team, value):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO jeopardy_results (cid, win_team, value) VALUES (%s, %s, %s)
+                ON CONFLICT (cid) DO UPDATE
+                SET win_team = EXCLUDED.win_team, value = EXCLUDED.value
+            """, (cid, win_team, value))
+        conn.commit()
+
+
+def jeopardy_locked_teams(cid):
+    out = set()
+    if not cid:
+        return out
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT team FROM jeopardy_lockout WHERE cid = %s", (cid,))
+            for (team,) in cur.fetchall():
+                out.add(team)
+    return out
+
+
+def jeopardy_add_lockout(cid, team):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO jeopardy_lockout (cid, team) VALUES (%s, %s)
+                ON CONFLICT (cid, team) DO NOTHING
+            """, (cid, team))
+        conn.commit()
+
+
+def jeopardy_clear_lockout(cid):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM jeopardy_lockout WHERE cid = %s", (cid,))
+        conn.commit()
+
+
+def jeopardy_try_buzz(team):
+    # First arrival for the armed clue wins through one guarded write.
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE jeopardy_state SET buzz_team = %s, phase = 'buzzed'
+                WHERE id = 1 AND phase = 'armed' AND buzz_team IS NULL
+            """, (team,))
+            won = cur.rowcount == 1
+        conn.commit()
+    return won
+
+
+def jeopardy_reset(keep_members=True):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM jeopardy_results")
+            cur.execute("DELETE FROM jeopardy_lockout")
+            cur.execute("""
+                UPDATE jeopardy_state
+                SET active_cid = NULL, phase = 'board', buzz_team = NULL,
+                    revealed = FALSE, winner_shown = FALSE
+                WHERE id = 1
+            """)
+            if not keep_members:
+                cur.execute("DELETE FROM jeopardy_members")
+        conn.commit()
+
+
+def jeopardy_board(for_host):
+    st = jeopardy_get_state()
+    results = jeopardy_results_map()
+    cats = [c["title"] for c in JCATS]
+    cells = []
+    for c in range(len(JCATS)):
+        for v in range(len(JVALS)):
+            cid = jcid(c, v)
+            cells.append({
+                "cid": cid, "c": c, "v": v, "value": JVALS[v],
+                "done": cid in results,
+                "win_team": results.get(cid, {}).get("win_team"),
+            })
+    cur_clue = None
+    active = st["active_cid"]
+    if active and active in JCLUES:
+        cur_clue = {"cid": active, "clue": JCLUES[active]["clue"]}
+        if for_host or st["revealed"]:
+            cur_clue["answer"] = JCLUES[active]["answer"]
+        cur_clue["value"] = jvalue_for(active)
+    block = {
+        "phase": st["phase"],
+        "active": active,
+        "buzz_team": st["buzz_team"],
+        "revealed": st["revealed"],
+        "winner_shown": st["winner_shown"],
+        "cats": cats,
+        "vals": JVALS,
+        "cells": cells,
+        "clue": cur_clue,
+        "scores": jeopardy_scores(),
+        "teams": JTEAMS,
+    }
+    if for_host:
+        block["locked"] = sorted(jeopardy_locked_teams(active))
+    return block
+
+
 PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -491,6 +790,8 @@ var renderedKey = null;
 var lastRecStatus = null;
 var qi = 0;
 var recPeer = null;
+var jTimer = null;
+var jMounted = false;
 
 function esc(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 function el(id){ return document.getElementById(id); }
@@ -556,9 +857,11 @@ function tick(){
 }
 
 function renderSpot(key, status){
+  if (jTimer && key !== "jeopardy"){ clearInterval(jTimer); jTimer = null; jMounted = false; }
   if (key === "welcome"){ renderJoined(); return; }
   if (key === "disc"){ startDisc(); return; }
   if (key === "rollcall"){ startRollcall(); return; }
+  if (key === "jeopardy"){ startJeopardy(); return; }
   if (key === "recognition"){
     if (status === "locked"){ recWallUp(); } else { startRecognition(); }
     return;
@@ -681,6 +984,77 @@ function recWallUp(){
     '<div class="hold"><span class="tag">RECOGNITION WALL</span>' +
     '<p class="big">Look up at the screen.</p>' +
     '<p class="small">The notes the room wrote are up on the main display.</p></div>';
+}
+
+// ----- Quizo, the team buzzer -----
+var jLastSig = "";
+
+function startJeopardy(){
+  setTitle("Quizo");
+  setBar(0);
+  el("sub").textContent = "Team play";
+  el("body").innerHTML =
+    '<div id="jbanner" style="text-align:center;margin-bottom:14px"></div>' +
+    '<div id="jbuzzarea"></div>';
+  jMounted = true;
+  jLastSig = "";
+  jPoll();
+  if (jTimer){ clearInterval(jTimer); }
+  jTimer = setInterval(jPoll, 900);
+}
+
+function jPoll(){
+  fetch("/spot/jeopardy/me").then(function(r){ return r.json(); }).then(function(d){
+    if (!d || d.ok === false){ return; }
+    drawJParticipant(d);
+  }).catch(function(){});
+}
+
+function jMsg(big, small, color){
+  return '<div style="text-align:center;padding:26px 10px;border:1px solid #e6ebef;border-radius:16px">' +
+    '<p style="font-size:19px;font-weight:600;margin:0 0 6px;color:' + color + '">' + esc(big) + '</p>' +
+    '<p style="font-size:14px;color:#5f6b76;margin:0">' + esc(small) + '</p></div>';
+}
+
+function drawJParticipant(d){
+  var ban = el("jbanner");
+  if (!ban){ return; }
+  if (!d.team){
+    ban.innerHTML = '<span class="tag">QUIZO</span>' +
+      '<p style="font-size:20px;font-weight:600;margin:6px 0 4px">Getting your team</p>' +
+      '<p style="font-size:14px;color:#5f6b76;margin:0">Your host is placing you on a team. Watch the screen.</p>';
+    el("jbuzzarea").innerHTML = "";
+    jLastSig = "noteam";
+    return;
+  }
+  ban.innerHTML =
+    '<div style="display:inline-block;background:' + d.team_color + ';color:#fff;border-radius:999px;padding:6px 16px;font-size:14px;font-weight:600">' + esc(d.team_name) + '</div>' +
+    '<div style="font-size:34px;font-weight:700;margin-top:10px">' + d.score + '</div>' +
+    '<div style="font-size:12px;color:#5f6b76">your team score</div>';
+  var sig = d.phase + "|" + (d.buzz_team || 0) + "|" + (d.locked ? "L" : "") + "|" + d.team;
+  if (sig === jLastSig){ return; }
+  jLastSig = sig;
+  var area = el("jbuzzarea");
+  if (d.phase === "armed" && !d.locked){
+    area.innerHTML = '<button id="buzzbtn" onclick="buzz()" style="width:100%;background:' + d.team_color + ';color:#fff;border:none;border-radius:18px;padding:40px 12px;font-size:30px;font-weight:700;font-family:inherit;cursor:pointer;letter-spacing:3px">BUZZ</button>';
+  } else if (d.phase === "armed" && d.locked){
+    area.innerHTML = jMsg("Your team already answered", "Let the other teams try this one.", "#8a97a3");
+  } else if (d.phase === "buzzed" && d.buzz_team === d.team){
+    area.innerHTML = jMsg("You buzzed first", "Say your answer out loud to the room.", "#0d9488");
+  } else if (d.phase === "buzzed"){
+    area.innerHTML = jMsg((d.buzz_name || "Another team") + " buzzed first", "Listen in, you may get the next one.", "#8a97a3");
+  } else if (d.phase === "answer"){
+    area.innerHTML = jMsg("Answer is on the screen", "Look up at the board.", "#8a97a3");
+  } else {
+    area.innerHTML = jMsg("Watch the board", "Your host will put the next clue up.", "#8a97a3");
+  }
+}
+
+function buzz(){
+  var b = el("buzzbtn");
+  if (b){ b.textContent = "..."; b.disabled = true; }
+  api("/spot/jeopardy/buzz", {}).then(function(){ jLastSig = ""; jPoll(); })
+    .catch(function(){ jLastSig = ""; jPoll(); });
 }
 
 // ----- DISC -----
@@ -811,6 +1185,29 @@ HOST_PAGE = """<!DOCTYPE html>
   .rnote .rfrom { display: block; font-size: 11px; color: #8a97a3; margin-top: 3px; }
   .nextup .big { font-size: 30px; font-weight: 600; margin: 10px 0 6px; }
   .nextup .an { font-size: 14px; color: #5f6b76; }
+  .jboard { padding: 14px 16px 18px; background: #0f2942; }
+  .jhead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .jgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .jcat { background: #d4a017; color: #0f2942; font-weight: 600; font-size: 11px; text-align: center; padding: 10px 4px; border-radius: 6px; min-height: 52px; display: flex; align-items: center; justify-content: center; line-height: 1.2; }
+  .jcell { background: #0d9488; color: #fff; font-weight: 700; font-size: 20px; text-align: center; padding: 14px 4px; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+  .jcell.done { background: #0b2035; color: #0b2035; }
+  .jcell.active { background: #d4a017; color: #0f2942; }
+  .jclue { background: #12324f; border: 2px solid #d4a017; border-radius: 12px; padding: 26px 24px; text-align: center; margin-bottom: 12px; }
+  .jclue .jcv { font-size: 13px; color: #d4a017; font-weight: 600; letter-spacing: 1px; }
+  .jclue .jcq { font-size: 26px; color: #fff; font-weight: 600; line-height: 1.35; margin: 8px 0 0; }
+  .jclue .jca { font-size: 21px; color: #9fe1cb; font-weight: 600; margin-top: 14px; }
+  .jbuzzline { font-size: 16px; font-weight: 600; margin-top: 14px; }
+  .jscores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .jscore { background: #12324f; border-radius: 8px; padding: 12px 14px; }
+  .jscore .jsn { font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+  .jscore .jsv { font-size: 26px; font-weight: 700; color: #fff; }
+  .jwinner { background: #0f2942; padding: 44px 24px; text-align: center; }
+  .jwinner .wl { font-size: 14px; font-weight: 600; letter-spacing: 2px; color: #d4a017; text-transform: uppercase; }
+  .jwinner .wt { font-size: 40px; font-weight: 700; color: #fff; margin: 12px 0 18px; }
+  .jrank { max-width: 420px; margin: 0 auto; }
+  .jrankrow { display: flex; justify-content: space-between; align-items: center; background: #12324f; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; }
+  .jrankrow .rn { font-size: 16px; font-weight: 600; color: #fff; }
+  .jrankrow .rv { font-size: 20px; font-weight: 700; color: #9fe1cb; }
   .tools { display: flex; gap: 10px; margin-top: 14px; }
   .tbtn { background: #fff; color: #0f2942; border: 1px solid #d7dde3; border-radius: 10px; padding: 10px 16px; font-size: 13px; font-family: inherit; cursor: pointer; }
   a.link { color: #0d6e63; font-size: 13px; text-decoration: none; margin-left: auto; align-self: center; }
@@ -958,12 +1355,72 @@ function drawRecognition(data){
   byid("stagebody").innerHTML = h;
 }
 
+function jTeamByNum(teams, n){ for (var i=0;i<teams.length;i++){ if (teams[i].n === n){ return teams[i]; } } return null; }
+function jCellFor(cells, cid){ for (var i=0;i<cells.length;i++){ if (cells[i].cid === cid){ return cells[i]; } } return null; }
+
+function drawJWinner(j){
+  var ranked = j.teams.slice().sort(function(a,b){ return (j.scores[b.n]||0) - (j.scores[a.n]||0); });
+  var topScore = j.scores[ranked[0].n] || 0;
+  var tie = ranked.filter(function(t){ return (j.scores[t.n]||0) === topScore; });
+  var wname = tie.length > 1 ? "It is a tie" : ranked[0].name;
+  var wcolor = tie.length > 1 ? "#fff" : ranked[0].color;
+  var h = '<div class="jwinner"><div class="wl">Quizo champion</div>' +
+    '<div class="wt" style="color:' + wcolor + '">' + esc(wname) + '</div><div class="jrank">';
+  ranked.forEach(function(t){
+    h += '<div class="jrankrow" style="border-left:6px solid ' + t.color + '">' +
+      '<span class="rn">' + esc(t.name) + '</span><span class="rv">' + (j.scores[t.n]||0) + '</span></div>';
+  });
+  h += '</div></div>';
+  byid("stagebody").innerHTML = h;
+}
+
+function drawJeopardy(data){
+  var j = data.jeopardy;
+  byid("cnt").textContent = "";
+  if (!j){ byid("stagebody").innerHTML = ""; return; }
+  if (j.winner_shown){ drawJWinner(j); return; }
+  var h = '<div class="jboard">';
+  if (j.clue){
+    h += '<div class="jclue"><div class="jcv">' + j.clue.value + ' points</div>' +
+      '<div class="jcq">' + esc(j.clue.clue) + '</div>';
+    if (j.revealed && j.clue.answer){ h += '<div class="jca">' + esc(j.clue.answer) + '</div>'; }
+    if (j.buzz_team){
+      var bt = jTeamByNum(j.teams, j.buzz_team);
+      h += '<div class="jbuzzline" style="color:' + (bt ? bt.color : "#fff") + '">' + esc(bt ? bt.name : "A team") + ' buzzed first</div>';
+    } else if (j.phase === "armed"){
+      h += '<div class="jbuzzline" style="color:#9fe1cb">Buzzers are open</div>';
+    }
+    h += '</div>';
+  }
+  h += '<div class="jgrid">';
+  j.cats.forEach(function(c){ h += '<div class="jcat">' + esc(c) + '</div>'; });
+  for (var v=0; v<j.vals.length; v++){
+    for (var c=0; c<j.cats.length; c++){
+      var cid = c + "_" + v;
+      var cell = jCellFor(j.cells, cid);
+      var cls = "jcell";
+      if (cell && cell.done){ cls += " done"; }
+      else if (cid === j.active && j.phase !== "board"){ cls += " active"; }
+      h += '<div class="' + cls + '">' + ((cell && cell.done) ? "" : j.vals[v]) + '</div>';
+    }
+  }
+  h += '</div><div class="jscores">';
+  j.teams.forEach(function(t){
+    h += '<div class="jscore" style="border-top:4px solid ' + t.color + '">' +
+      '<div class="jsn" style="color:' + t.color + '">' + esc(t.name) + '</div>' +
+      '<div class="jsv">' + (j.scores[t.n]||0) + '</div></div>';
+  });
+  h += '</div></div>';
+  byid("stagebody").innerHTML = h;
+}
+
 function draw(data){
   byid("stitle").textContent = data.title;
   if (data.active !== "welcome"){ welcomeMounted = false; }
   if (data.active === "welcome"){ drawWelcome(data); }
   else if (data.active === "disc"){ drawPlot(data); }
   else if (data.active === "rollcall"){ drawTally(data); }
+  else if (data.active === "jeopardy"){ drawJeopardy(data); }
   else if (data.active === "recognition"){ drawRecognition(data); }
   else { drawNext(data); }
 }
@@ -978,7 +1435,7 @@ function clearAll(){
 }
 
 poll();
-setInterval(poll, 2500);
+setInterval(poll, 1500);
 </script>
 </body>
 </html>
@@ -1022,6 +1479,29 @@ ADMIN_PAGE = """<!DOCTYPE html>
   .toggle { font-size: 12px; font-family: inherit; border: 1px solid #d7dde3; background: #fff; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
   .drill { font-size: 12px; color: #5f6b76; margin-top: 4px; }
   code { background: #f4f6f8; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  .teamrow { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #eef2f5; }
+  .teamrow .tn { font-size: 13px; font-weight: 500; }
+  .teamrow .tc { font-size: 11px; color: #5f6b76; }
+  .tbtns { display: flex; gap: 5px; }
+  .tpick { border: 1px solid #d7dde3; background: #fff; border-radius: 7px; padding: 5px 10px; font-size: 12px; font-family: inherit; cursor: pointer; }
+  .tpick.on1 { background: #0d9488; color: #fff; border-color: #0d9488; }
+  .tpick.on2 { background: #d4a017; color: #3d2c00; border-color: #d4a017; }
+  .tpick.on3 { background: #3aa9c9; color: #fff; border-color: #3aa9c9; }
+  .jbgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 6px; }
+  .jbcat { font-size: 9px; text-align: center; color: #5f6b76; padding: 2px; line-height: 1.1; min-height: 26px; display: flex; align-items: center; justify-content: center; }
+  .jbcell { background: #0d9488; color: #fff; font-size: 13px; font-weight: 600; text-align: center; padding: 10px 2px; border-radius: 5px; cursor: pointer; }
+  .jbcell.done { background: #e6ebef; color: #b6c0ca; cursor: default; }
+  .jbcell.active { background: #d4a017; color: #3d2c00; }
+  .jcluebox { background: #f4f6f8; border-radius: 10px; padding: 12px 14px; margin-top: 12px; }
+  .jcluebox .cq { font-size: 14px; font-weight: 500; }
+  .jcluebox .ca { font-size: 13px; color: #0d6e63; font-weight: 600; margin-top: 6px; }
+  .jcluebox .cb { font-size: 12px; color: #5f6b76; margin-top: 6px; }
+  .jact { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .jact .b { border: 1px solid #d7dde3; background: #fff; border-radius: 8px; padding: 9px 13px; font-size: 13px; font-family: inherit; cursor: pointer; }
+  .jact .b.good { background: #0d9488; color: #fff; border-color: #0d9488; }
+  .jact .b.bad { background: #fff; color: #993556; border-color: #e3b8c4; }
+  .jscoremini { display: flex; gap: 8px; margin-top: 12px; }
+  .jscoremini .s { flex: 1; border-radius: 8px; padding: 8px 10px; text-align: center; color: #fff; }
 </style>
 </head>
 <body>
@@ -1038,6 +1518,13 @@ ADMIN_PAGE = """<!DOCTYPE html>
   <div class="panel">
     <div class="spotgrid" id="spotgrid"></div>
     <div class="statusline" id="statusline"></div>
+  </div>
+
+  <div id="jsection" style="display:none">
+    <h2>Quizo, the review board</h2>
+    <div class="panel">
+      <div id="jadmin"></div>
+    </div>
   </div>
 
   <h2>The room</h2>
@@ -1097,7 +1584,10 @@ function drawSpots(d){
   byid("spotgrid").innerHTML = h;
   var st = d.spots.filter(function(s){ return s.is_active; })[0];
   var sl = "";
-  if (st){
+  if (st && st.key === "jeopardy"){
+    sl = 'Quizo runs from the panel below. ' +
+      '<button class="toggle" onclick="clearSpot(\\'jeopardy\\')">Reset Quizo</button>';
+  } else if (st){
     var isRec = st.key === "recognition";
     var openLbl = isRec ? "Hide the wall" : "Lock input";
     var lockLbl = isRec ? "Reveal the wall" : "Open input";
@@ -1134,15 +1624,104 @@ function drawRoster(d){
   byid("rosterbody").innerHTML = h;
 }
 
+var jAdminSig = "";
+
+function setTeam(pid, team){ post("/jeopardy/team", {pid: pid, team: team}).then(load); }
+function previewTeam(team){ post("/jeopardy/preview_team", {team: team}).then(load); }
+function autoSplit(){ post("/jeopardy/autosplit", {}).then(load); }
+function revealCell(c, v){ post("/jeopardy/reveal", {cid: c + "_" + v}).then(load); }
+function judgeCorrect(){ post("/jeopardy/judge", {result: "correct"}).then(load); }
+function judgeIncorrect(){ post("/jeopardy/judge", {result: "incorrect"}).then(load); }
+function revealAnswer(){ post("/jeopardy/answer", {}).then(load); }
+function closeClue(){ post("/jeopardy/close", {}).then(load); }
+function showWinner(){ post("/jeopardy/winner", {show: true}).then(load); }
+function hideWinner(){ post("/jeopardy/winner", {show: false}).then(load); }
+function resetGame(){ if (!confirm("Reset the Quizo board and scores? Team assignments stay.")) return; post("/jeopardy/reset", {}).then(function(){ jAdminSig = ""; load(); }); }
+
+function jaCell(cells, cid){ for (var i=0;i<cells.length;i++){ if (cells[i].cid === cid){ return cells[i]; } } return null; }
+function jaTeam(teams, n){ for (var i=0;i<teams.length;i++){ if (teams[i].n === n){ return teams[i]; } } return null; }
+
+function drawJeopardyAdmin(d){
+  var j = d.jeopardy;
+  var mem = d.jmembers || {};
+  var sig = JSON.stringify(j) + "|" + JSON.stringify(mem);
+  if (sig === jAdminSig){ return; }
+  jAdminSig = sig;
+  var h = '<div style="font-size:12px;color:#5f6b76;margin-bottom:8px">Assign each person to a team, then tap a clue. <button class="tpick" onclick="autoSplit()">Auto split into 3</button></div>';
+  d.roster.forEach(function(p){
+    var t = mem[p.id] || 0;
+    h += '<div class="teamrow"><div><div class="tn">' + esc(p.name) + '</div><div class="tc">' + (p.joined ? "in" : "out") + '</div></div>' +
+      '<div class="tbtns">' +
+      '<button class="tpick ' + (t===1?"on1":"") + '" onclick="setTeam(' + p.id + ',1)">1</button>' +
+      '<button class="tpick ' + (t===2?"on2":"") + '" onclick="setTeam(' + p.id + ',2)">2</button>' +
+      '<button class="tpick ' + (t===3?"on3":"") + '" onclick="setTeam(' + p.id + ',3)">3</button>' +
+      '</div></div>';
+  });
+  var pt = mem[0] || 0;
+  h += '<div class="teamrow"><div><div class="tn">Preview run</div><div class="tc">for your dry run on /preview</div></div>' +
+    '<div class="tbtns">' +
+    '<button class="tpick ' + (pt===1?"on1":"") + '" onclick="previewTeam(1)">1</button>' +
+    '<button class="tpick ' + (pt===2?"on2":"") + '" onclick="previewTeam(2)">2</button>' +
+    '<button class="tpick ' + (pt===3?"on3":"") + '" onclick="previewTeam(3)">3</button>' +
+    '</div></div>';
+  h += '<h2 style="margin:16px 0 4px;font-size:13px">Tap a clue to put it on the screen</h2><div class="jbgrid">';
+  j.cats.forEach(function(c){ h += '<div class="jbcat">' + esc(c) + '</div>'; });
+  for (var v=0; v<j.vals.length; v++){
+    for (var c=0; c<j.cats.length; c++){
+      var cid = c + "_" + v;
+      var cell = jaCell(j.cells, cid);
+      var cls = "jbcell";
+      var oc = 'onclick="revealCell(' + c + ',' + v + ')"';
+      if (cell && cell.done){ cls += " done"; oc = ""; }
+      else if (cid === j.active && j.phase !== "board"){ cls += " active"; }
+      h += '<div class="' + cls + '" ' + oc + '>' + ((cell && cell.done) ? "" : j.vals[v]) + '</div>';
+    }
+  }
+  h += '</div>';
+  if (j.clue){
+    h += '<div class="jcluebox"><div class="cq">' + esc(j.clue.clue) + '</div>' +
+      '<div class="ca">Answer, ' + esc(j.clue.answer || "") + '</div>';
+    var status = "";
+    if (j.buzz_team){
+      var bt = jaTeam(j.teams, j.buzz_team);
+      status = (bt ? bt.name : "A team") + " buzzed first. They answer out loud, then you rule.";
+    } else if (j.phase === "armed"){
+      status = "Buzzers are open. Waiting for a team.";
+    } else if (j.phase === "answer"){
+      status = "Answer is on the screen.";
+    }
+    h += '<div class="cb">' + esc(status) + '</div><div class="jact">';
+    if (j.buzz_team){
+      h += '<button class="b good" onclick="judgeCorrect()">Correct</button>' +
+        '<button class="b bad" onclick="judgeIncorrect()">Incorrect</button>';
+    }
+    if (!j.revealed){ h += '<button class="b" onclick="revealAnswer()">Reveal answer</button>'; }
+    h += '<button class="b" onclick="closeClue()">Close, no winner</button></div></div>';
+  }
+  h += '<div class="jscoremini">';
+  j.teams.forEach(function(t){
+    h += '<div class="s" style="background:' + t.color + '"><div style="font-size:11px">' + esc(t.name) + '</div>' +
+      '<div style="font-size:18px;font-weight:700">' + (j.scores[t.n]||0) + '</div></div>';
+  });
+  h += '</div><div class="jact" style="margin-top:12px">';
+  if (j.winner_shown){ h += '<button class="b good" onclick="hideWinner()">Hide winner</button>'; }
+  else { h += '<button class="b good" onclick="showWinner()">Reveal winner</button>'; }
+  h += '<button class="b bad" onclick="resetGame()">Reset Quizo</button></div>';
+  byid("jadmin").innerHTML = h;
+}
+
 function load(){
   fetch("/host/" + SECRET + "/admin/data").then(function(r){ return r.json(); }).then(function(d){
     drawSpots(d);
     drawRoster(d);
+    var js = byid("jsection");
+    if (d.active === "jeopardy"){ js.style.display = "block"; drawJeopardyAdmin(d); }
+    else { js.style.display = "none"; jAdminSig = ""; }
   }).catch(function(){});
 }
 
 load();
-setInterval(load, 3000);
+setInterval(load, 1500);
 </script>
 </body>
 </html>
@@ -1295,6 +1874,54 @@ def spot_mine(key):
     return jsonify(r or {})
 
 
+@app.route("/spot/jeopardy/me")
+def jeopardy_me():
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({"ok": False})
+    team = jeopardy_member(pid)
+    if not team:
+        return jsonify({"ok": True, "team": None})
+    st = jeopardy_get_state()
+    scores = jeopardy_scores()
+    tm = JTEAM_BY_NUM.get(team, {"name": "Team", "color": TEAL})
+    locked = team in jeopardy_locked_teams(st["active_cid"])
+    buzz_name = None
+    if st["buzz_team"]:
+        buzz_name = JTEAM_BY_NUM.get(st["buzz_team"], {}).get("name")
+    return jsonify({
+        "ok": True,
+        "team": team,
+        "team_name": tm["name"],
+        "team_color": tm["color"],
+        "score": scores.get(team, 0),
+        "phase": st["phase"],
+        "buzz_team": st["buzz_team"],
+        "buzz_name": buzz_name,
+        "locked": locked,
+        "revealed": st["revealed"],
+    })
+
+
+@app.route("/spot/jeopardy/buzz", methods=["POST"])
+def jeopardy_buzz():
+    pid = joined_pid()
+    if pid is None:
+        return jsonify({"ok": False})
+    if get_active_spot() != "jeopardy":
+        return jsonify({"ok": False})
+    team = jeopardy_member(pid)
+    if not team:
+        return jsonify({"ok": False, "reason": "noteam"})
+    st = jeopardy_get_state()
+    if st["phase"] != "armed" or st["active_cid"] is None:
+        return jsonify({"ok": True, "won": False})
+    if team in jeopardy_locked_teams(st["active_cid"]):
+        return jsonify({"ok": True, "won": False, "locked": True})
+    won = jeopardy_try_buzz(team)
+    return jsonify({"ok": True, "won": won})
+
+
 def send_result_email(to_email, to_name, primary, blend):
     if not SENDGRID_API_KEY:
         return {"ok": False, "status": "skipped"}
@@ -1405,7 +2032,7 @@ def host_data(secret):
                 "from": first,
                 "note": r["note"],
             })
-    return jsonify({
+    payload = {
         "active": active,
         "status": get_spot_status(active),
         "title": spot["title"],
@@ -1414,7 +2041,10 @@ def host_data(secret):
         "rollcall": rollcall_tally(),
         "joined": joined,
         "recognition": recognition,
-    })
+    }
+    if active == "jeopardy":
+        payload["jeopardy"] = jeopardy_board(for_host=False)
+    return jsonify(payload)
 
 
 @app.route("/host/<secret>/clear", methods=["POST"])
@@ -1426,6 +2056,15 @@ def host_clear(secret):
             cur.execute("DELETE FROM answers")
             cur.execute("DELETE FROM responses")
             cur.execute("DELETE FROM participants")
+            cur.execute("DELETE FROM jeopardy_results")
+            cur.execute("DELETE FROM jeopardy_lockout")
+            cur.execute("DELETE FROM jeopardy_members")
+            cur.execute("""
+                UPDATE jeopardy_state
+                SET active_cid = NULL, phase = 'board', buzz_team = NULL,
+                    revealed = FALSE, winner_shown = FALSE
+                WHERE id = 1
+            """)
         conn.commit()
     return jsonify({"ok": True})
 
@@ -1481,6 +2120,8 @@ def admin_data(secret):
         "active_title": active_title,
         "spots": spots_out,
         "roster": roster_out,
+        "jeopardy": jeopardy_board(for_host=True),
+        "jmembers": jeopardy_members_map(),
     })
 
 
@@ -1537,6 +2178,9 @@ def host_clear_spot(secret):
     key = data.get("key")
     if key not in SPOT_BY_KEY:
         return jsonify({"ok": False})
+    if key == "jeopardy":
+        jeopardy_reset(keep_members=True)
+        return jsonify({"ok": True})
     with get_conn() as conn:
         with conn.cursor() as cur:
             if key == "disc":
@@ -1556,7 +2200,125 @@ def host_clear_preview(secret):
             cur.execute("DELETE FROM answers WHERE pid = %s", (PREVIEW_PID,))
             cur.execute("DELETE FROM responses WHERE pid = %s", (PREVIEW_PID,))
             cur.execute("DELETE FROM participants WHERE pid = %s", (PREVIEW_PID,))
+            cur.execute("DELETE FROM jeopardy_members WHERE pid = %s", (PREVIEW_PID,))
         conn.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Quizo host controls
+# ---------------------------------------------------------------------------
+@app.route("/host/<secret>/jeopardy/team", methods=["POST"])
+def jeopardy_team(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    pid = data.get("pid")
+    team = data.get("team")
+    if pid not in (ROSTER_IDS + [PREVIEW_PID]) or team not in JTEAM_NUMS:
+        return jsonify({"ok": False})
+    jeopardy_assign(pid, team)
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/jeopardy/preview_team", methods=["POST"])
+def jeopardy_preview_team(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    team = data.get("team")
+    if team not in JTEAM_NUMS:
+        return jsonify({"ok": False})
+    jeopardy_assign(PREVIEW_PID, team)
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/jeopardy/autosplit", methods=["POST"])
+def jeopardy_autosplit(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    # Balanced three way split that puts each coworker pair on different teams.
+    plan = {1: 1, 4: 1, 6: 1, 2: 2, 5: 2, 3: 3, 7: 3}
+    for pid, team in plan.items():
+        jeopardy_assign(pid, team)
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/jeopardy/reveal", methods=["POST"])
+def jeopardy_reveal(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    cid = data.get("cid")
+    if cid not in JCLUES:
+        return jsonify({"ok": False})
+    if cid in jeopardy_results_map():
+        return jsonify({"ok": False, "done": True})
+    jeopardy_clear_lockout(cid)
+    jeopardy_set_state(active_cid=cid, phase="armed", buzz_team=None,
+                       revealed=False, winner_shown=False)
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/jeopardy/judge", methods=["POST"])
+def jeopardy_judge(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    result = data.get("result")
+    st = jeopardy_get_state()
+    active = st["active_cid"]
+    bt = st["buzz_team"]
+    if not active or not bt:
+        return jsonify({"ok": False})
+    if result == "correct":
+        jeopardy_record_result(active, bt, jvalue_for(active))
+        jeopardy_set_state(active_cid="clear", phase="board", buzz_team=None, revealed=False)
+        return jsonify({"ok": True})
+    if result == "incorrect":
+        jeopardy_add_lockout(active, bt)
+        jeopardy_set_state(phase="armed", buzz_team=None)
+        return jsonify({"ok": True})
+    return jsonify({"ok": False})
+
+
+@app.route("/host/<secret>/jeopardy/answer", methods=["POST"])
+def jeopardy_answer(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    st = jeopardy_get_state()
+    if not st["active_cid"]:
+        return jsonify({"ok": False})
+    jeopardy_set_state(phase="answer", revealed=True)
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/jeopardy/close", methods=["POST"])
+def jeopardy_close(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    st = jeopardy_get_state()
+    active = st["active_cid"]
+    if active and active not in jeopardy_results_map():
+        jeopardy_record_result(active, None, jvalue_for(active))
+    jeopardy_set_state(active_cid="clear", phase="board", buzz_team=None, revealed=False)
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/jeopardy/winner", methods=["POST"])
+def jeopardy_winner(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    data = request.get_json(silent=True) or {}
+    jeopardy_set_state(winner_shown=bool(data.get("show")))
+    return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/jeopardy/reset", methods=["POST"])
+def jeopardy_reset_route(secret):
+    if secret != HOST_SECRET:
+        return jsonify({"ok": False}), 404
+    jeopardy_reset(keep_members=True)
     return jsonify({"ok": True})
 
 
