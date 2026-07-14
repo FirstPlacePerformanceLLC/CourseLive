@@ -1595,11 +1595,30 @@ function api(path, body){
 }
 
 // ----- join by name -----
+var ROSTER_CACHE = null;
+
+function pickFromCache(id){
+  if (!ROSTER_CACHE){ return null; }
+  var m = ROSTER_CACHE.filter(function(x){ return x.id === id; });
+  return m.length ? m[0] : null;
+}
+
+function renderConfirm(p, id){
+  el("sub").textContent = "Confirm";
+  el("body").innerHTML =
+    '<p class="stem">Is this you?</p>' +
+    '<div class="name-btn"><span class="nm">' + esc(p.name) + '</span>' +
+    '<span class="co">' + esc(p.company) + '</span></div>' +
+    '<button class="btn" onclick="confirmPick(' + id + ')">Yes, that is me</button>' +
+    '<button class="btn ghost" onclick="renderPick()">No, go back</button>';
+}
+
 function renderPick(){
   setBar(0);
   setTitle("CourseLive");
   el("sub").textContent = "Tap your name to begin";
   fetch("/roster").then(function(r){ return r.json(); }).then(function(list){
+    ROSTER_CACHE = list;
     var h = '<p class="stem">Who are you?</p>';
     list.forEach(function(p){
       h += '<div class="name-btn" onclick="choose(' + p.id + ')">' +
@@ -1611,15 +1630,12 @@ function renderPick(){
 }
 
 function choose(id){
+  var cached = pickFromCache(id);
+  if (cached){ renderConfirm(cached, id); return; }
   fetch("/roster").then(function(r){ return r.json(); }).then(function(list){
+    ROSTER_CACHE = list;
     var p = list.filter(function(x){ return x.id === id; })[0];
-    el("sub").textContent = "Confirm";
-    el("body").innerHTML =
-      '<p class="stem">Is this you?</p>' +
-      '<div class="name-btn"><span class="nm">' + esc(p.name) + '</span>' +
-      '<span class="co">' + esc(p.company) + '</span></div>' +
-      '<button class="btn" onclick="confirmPick(' + id + ')">Yes, that is me</button>' +
-      '<button class="btn ghost" onclick="renderPick()">No, go back</button>';
+    if (p){ renderConfirm(p, id); }
   });
 }
 
